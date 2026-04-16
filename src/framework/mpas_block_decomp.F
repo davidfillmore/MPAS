@@ -351,10 +351,16 @@ module mpas_block_decomp
 #ifdef MPAS_USE_MPI_F08
       use mpi_f08, only : MPI_Comm, MPI_INTEGER, MPI_Comm_dup, MPI_Comm_free, MPI_Gather, MPI_Gatherv
 #else
+#ifndef NOMPIMOD
       use mpi
+#endif
 #endif
 
       implicit none
+
+#ifdef NOMPIMOD
+      include 'mpif.h'
+#endif
 
       type (dm_info), intent(inout) :: dminfo !< Input: domain information
       type (graph), intent(in) :: partial_global_graph_info !< Input: Global graph information

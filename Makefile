@@ -1,5 +1,13 @@
 MODEL_FORMULATION =
 
+# Export Open MPI wrapper-compiler selection variables so that targets
+# (e.g. `llvm`) can set OMPI_FC/OMPI_CC/OMPI_CXX and have them propagate
+# to recursive $(MAKE) invocations and to any shell recipes that invoke
+# mpif90/mpicc/mpic++.
+export OMPI_FC
+export OMPI_CC
+export OMPI_CXX
+
 ifneq "${MPAS_SHELL}" ""
         SHELL = ${MPAS_SHELL}
 endif
@@ -577,23 +585,26 @@ bluegene:   # BUILDTARGET (deprecated) IBM XL compilers on BlueGene/Q systems
 	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
 
 llvm:   # BUILDTARGET LLVM flang, clang, and clang++ compilers
-	( $(MAKE) all \
+	( OMPI_FC=flang OMPI_CC=clang OMPI_CXX=clang++ $(MAKE) all \
+	"OMPI_FC = flang" \
+	"OMPI_CC = clang" \
+	"OMPI_CXX = clang++" \
 	"FC_PARALLEL = mpifort" \
 	"CC_PARALLEL = mpicc" \
 	"CXX_PARALLEL = mpic++" \
 	"FC_SERIAL = flang" \
 	"CC_SERIAL = clang" \
 	"CXX_SERIAL = clang++" \
-	"FFLAGS_PROMOTION = -r8" \
-	"FFLAGS_OPT = -O3 -g -Mbyteswapio -Mfreeform" \
+	"FFLAGS_PROMOTION = -fdefault-real-8 -fdefault-double-8" \
+	"FFLAGS_OPT = -O3 -g -fconvert=big-endian -ffree-form" \
 	"CFLAGS_OPT = -O3 -g" \
 	"CXXFLAGS_OPT = -O3 -g" \
 	"LDFLAGS_OPT = -O3 -g" \
-	"FFLAGS_DEBUG = -O0 -g -Mbounds -Mchkptr -Mbyteswapio -Mfreeform -Mstandard" \
+	"FFLAGS_DEBUG = -O0 -g -fcheck=all -fconvert=big-endian -ffree-form" \
 	"CFLAGS_DEBUG = -O0 -g -Weverything" \
 	"CXXFLAGS_DEBUG = -O0 -g -Weverything" \
 	"LDFLAGS_DEBUG = -O0 -g" \
-	"FFLAGS_OMP = -mp" \
+	"FFLAGS_OMP = -fopenmp" \
 	"CFLAGS_OMP = -fopenmp" \
 	"PICFLAG = -fpic" \
 	"BUILD_TARGET = $(@)" \
@@ -601,7 +612,7 @@ llvm:   # BUILDTARGET LLVM flang, clang, and clang++ compilers
 	"DEBUG = $(DEBUG)" \
 	"USE_PAPI = $(USE_PAPI)" \
 	"OPENMP = $(OPENMP)" \
-	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI" )
+	"CPPFLAGS = $(MODEL_FORMULATION) -D_MPI -DNOMPIMOD" )
 
 nag:   # BUILDTARGET NAG Fortran compiler and GNU C/C++ compilers
 	( $(MAKE) all \

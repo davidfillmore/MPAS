@@ -249,7 +249,39 @@ make -j8 && make install
 
 #### PIO Library
 
-Build PIO with LLVM compilers (see PIO documentation). Install to `$HOME/software`.
+Build PIO with LLVM compilers, pointed at Homebrew NetCDF. On this host
+the working configuration is:
+
+```bash
+git clone https://github.com/NCAR/ParallelIO.git
+cd ParallelIO && mkdir build && cd build
+cmake -DCMAKE_INSTALL_PREFIX=$HOME/software \
+      -DCMAKE_C_COMPILER=clang -DCMAKE_Fortran_COMPILER=flang \
+      -DMPI_C_COMPILER=/opt/homebrew/bin/mpicc \
+      -DMPI_Fortran_COMPILER=/opt/homebrew/bin/mpifort \
+      -DNetCDF_PATH=/opt/homebrew/opt/netcdf \
+      -DNetCDF_Fortran_PATH=/opt/homebrew/opt/netcdf-fortran \
+      -DWITH_PNETCDF=OFF \
+      -DPIO_ENABLE_DOC=OFF -DPIO_ENABLE_TESTS=OFF -DPIO_ENABLE_EXAMPLES=OFF \
+      -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/netcdf;/opt/homebrew/opt/netcdf-fortran;/opt/homebrew/opt/hdf5;/opt/homebrew/opt/open-mpi" \
+      ..
+make -j8 && make install
+```
+
+**Why `-DWITH_PNETCDF=OFF`.** Homebrew's NetCDF is built without MPI/HDF5
+parallel support, and PnetCDF is optional. With PnetCDF disabled, PIO
+only provides the serial-NetCDF I/O path, which is fine for idealized
+cases and moderate production runs (one I/O task, rank 0 scatters).
+
+**Runtime implication.** When PIO has no PnetCDF backend, every MPAS
+stream must set `io_type="netcdf"` explicitly — otherwise PIO picks its
+parallel default and aborts at stream open with
+`CRITICAL ERROR: Could not open input file ...`. See the note in
+`RUN.md` for the supercell case.
+
+**If you later want parallel I/O,** build PnetCDF from source as
+described above, then reconfigure PIO with
+`-DWITH_PNETCDF=ON -DPnetCDF_PATH=$HOME/software`.
 
 #### Building MPAS
 

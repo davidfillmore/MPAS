@@ -8,7 +8,12 @@ The supercell thunderstorm is an idealized convection test case located at `~/Da
 
 ### Important: I/O Configuration
 
-The `streams.atmosphere` file must use `io_type="netcdf"` for input and output streams to avoid PnetCDF compatibility issues:
+On hosts where PIO was built without PnetCDF (e.g. the macOS LLVM build
+described in [BUILD.md](BUILD.md)), every input and output stream in
+**both** `streams.init_atmosphere` and `streams.atmosphere` must set
+`io_type="netcdf"` explicitly. Otherwise PIO picks a parallel default,
+finds no usable backend, and aborts with
+`CRITICAL ERROR: Could not open input file ...`.
 
 ```xml
 <immutable_stream name="input"
@@ -23,34 +28,60 @@ The `streams.atmosphere` file must use `io_type="netcdf"` for input and output s
         ...>
 ```
 
+On hosts where PIO does have PnetCDF support, the explicit `io_type` is
+harmless — it just forces the serial path. Leave it in for portability.
+
 ### Prerequisites
 
-1. Build the atmosphere model (see [BUILD.md](BUILD.md)):
+1. Build both the init_atmosphere and atmosphere cores (see
+   [BUILD.md](BUILD.md)). The legacy Makefile builds one core per
+   invocation:
    ```bash
-   make -j8 gfortran \
-     CORE=atmosphere \
+   make -j8 gfortran CORE=init_atmosphere \
+     PIO="$PIO" NETCDF="$NETCDF" PNETCDF="$PNETCDF" PRECISION=double
+   make -j8 gfortran CORE=atmosphere \
      PIO="$PIO" NETCDF="$NETCDF" PNETCDF="$PNETCDF" PRECISION=double
    ```
 
-2. Verify the executable exists:
+   On macOS, substitute `llvm` for `gfortran` and drop `PNETCDF=` if PIO
+   was built without PnetCDF.
+
+2. Verify the executables exist:
    ```bash
-   ls -la atmosphere_model
+   ls -la init_atmosphere_model atmosphere_model
    ```
+
+3. `LANDUSE.TBL` must be present in the run directory. Physics init
+   reads it even when `config_physics_suite='none'`; without it the run
+   aborts with `subroutine landuse_init_forMPAS: failure opening LANDUSE.TBL`.
 
 ### Running the Test
 
-**Important:** You must remove or move any existing `output.nc` before running. MPAS defaults to `clobber_mode = never_modify`, so if `output.nc` already exists the model will silently skip all output writes — the run completes but produces no new data.
+The supercell case runs in two stages: `init_atmosphere_model` generates
+initial conditions from the mesh, then `atmosphere_model` integrates
+forward.
 
 ```bash
 cd ~/Data/MPAS/supercell
 
-# Archive previous run output (REQUIRED — model won't overwrite existing output.nc)
+# Stage 1: initial conditions (produces supercell_init.nc)
+rm -f log.init_atmosphere.*.{out,err} supercell_init.nc
+mpiexec -n 8 ./init_atmosphere_model
+```
+
+**Important:** You must remove or move any existing `output.nc` before
+running stage 2. MPAS defaults to `clobber_mode = never_modify`, so if
+`output.nc` already exists the model will silently skip all output
+writes — the run completes but produces no new data.
+
+```bash
+# Stage 2: atmosphere forecast
 timestamp=$(date +%Y%m%d_%H%M%S)
 [ -f output.nc ] && mv output.nc output.${timestamp}.nc
 [ -f log.atmosphere.0000.out ] && mv log.atmosphere.0000.out log.atmosphere.0000.${timestamp}.out
 
 # Run with 8 MPI ranks (recommended for 10-core machine)
-mpiexec -n 8 ~/EarthSystem/MPAS/atmosphere_model
+mpiexec -n 8 ./atmosphere_model
 ```
 
 ### MPI Rank Selection
@@ -94,21 +125,33 @@ tail -20 log.atmosphere.0000.out
 
 Look for final timestep and timing statistics.
 
-### Observed behavior on this host
+### Observed behavior
 
-The following values were captured from a clean 8-rank run of the
-supercell case on this machine (conda-forge gfortran build, see
-[BUILD.md](BUILD.md)). Use them as a sanity check that a fresh build is
-producing the right answer.
+Reference numbers from clean 8-rank runs of the supercell case. Use them
+as a sanity check that a fresh build is producing the right answer.
+
+**Ubuntu host, conda-forge gfortran build** (2-hour run):
 
 | Metric | Value |
 |--------|-------|
 | Ranks | 8 (`supercell.graph.info.part.8`) |
 | Timestep | 3.0 s |
-| Total steps | 2400 (for the default 2-hour run) |
+| Total steps | 2400 |
 | Wall time per integration step | ≈ 0.47 s |
 | Full-run wall time (projected) | ≈ 19 min |
 | `output.nc` size at completion | ≈ 4.6 GB |
+
+**macOS host, Homebrew LLVM flang build** (3-minute smoke-test run):
+
+| Metric | Value |
+|--------|-------|
+| Ranks | 8 (`supercell.graph.info.part.8`) |
+| Timestep | 3.0 s |
+| Total steps | 60 |
+| `init_atmosphere` wall time | ≈ 2 s |
+| `atmosphere` wall time | ≈ 23 s |
+| `supercell_init.nc` size | ≈ 357 MB |
+| `output.nc` size (2 Time records) | ≈ 517 MB |
 
 During the first ~50 minutes of simulated time, typical per-step
 diagnostics look like:
