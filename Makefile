@@ -3,10 +3,19 @@ MODEL_FORMULATION =
 # Export Open MPI wrapper-compiler selection variables so that targets
 # (e.g. `llvm`) can set OMPI_FC/OMPI_CC/OMPI_CXX and have them propagate
 # to recursive $(MAKE) invocations and to any shell recipes that invoke
-# mpif90/mpicc/mpic++.
+# mpif90/mpicc/mpic++. Only export when actually set — exporting an empty
+# string causes Open MPI wrappers to abort with
+# "No underlying compiler was specified in the wrapper compiler data file",
+# which breaks the gfortran/intel/pgi targets.
+ifneq ($(strip $(OMPI_FC)),)
 export OMPI_FC
+endif
+ifneq ($(strip $(OMPI_CC)),)
 export OMPI_CC
+endif
+ifneq ($(strip $(OMPI_CXX)),)
 export OMPI_CXX
+endif
 
 ifneq "${MPAS_SHELL}" ""
         SHELL = ${MPAS_SHELL}
