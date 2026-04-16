@@ -64,3 +64,9 @@ src/core_*/inc
 
 # Sphinx documentation build output
 docs/_build/
+
+# macOS debug symbol bundles (emitted alongside dylibs/executables by clang/flang -g)
+*.dSYM/
+
+# Build-time staging directory for chemistry archive (contains ar symbol index)
+src/core_atmosphere/libchem/
