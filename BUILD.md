@@ -88,6 +88,10 @@ make -j8 gfortran CORE=init_atmosphere \
 ### GCC Build on Ubuntu (conda-forge)
 
 Building MPAS with GCC/gfortran on Ubuntu using a conda-forge toolchain.
+This is the build path used on the development host in this repo — the
+system `gcc`/`mpi` are **not** used. All compilers and libraries come
+from the `mpas` conda environment except for PIO, which is built from
+source and installed under `$HOME/software`.
 
 #### Prerequisites
 
@@ -99,15 +103,25 @@ conda create -n mpas -c conda-forge \
 conda activate mpas
 ```
 
-Verify:
-- `gfortran --version` — GCC 15.x (conda-forge)
-- `mpifort --version` — wraps gfortran
-- `nc-config --prefix` — points to conda env
-- `pkg-config --libs netcdf-fortran` — resolves
+Verify the environment resolves to the conda-forge toolchain (expected
+values on this host):
+
+| Check | Expected |
+|-------|----------|
+| `gfortran --version` | `GNU Fortran (conda-forge gcc 15.2.0-18) 15.2.0` |
+| `mpifort --version` | wraps the same conda-forge gfortran |
+| `which mpifort` | `$CONDA_PREFIX/bin/mpifort` |
+| `nc-config --prefix` | `$CONDA_PREFIX` (i.e. `~/miniconda3/envs/mpas`) |
+| `pkg-config --libs netcdf-fortran` | resolves without error |
+
+If `which gfortran` points anywhere outside `$CONDA_PREFIX/bin`, the
+conda env is not active or is shadowed by a `PATH` entry earlier in
+`.bashrc` — fix that before building.
 
 #### PIO Library
 
-PIO is not available via conda and must be built from source:
+PIO is not available via conda and must be built from source. Install to
+`$HOME/software` (the location the MPAS build expects in `PIO=`):
 
 ```bash
 git clone https://github.com/NCAR/ParallelIO.git
@@ -120,12 +134,19 @@ cmake .. \
 make -j8 && make install
 ```
 
+Verify the install landed:
+```bash
+ls $HOME/software/lib/libpio*
+# expected: libpioc.a  libpiof.a  libpio.settings
+```
+
 #### Building MPAS
 
-Set the library paths and run the legacy Makefile:
+From the MPAS repo root, with the `mpas` conda env active:
 
 ```bash
-export NETCDF="$(nc-config --prefix)"
+conda activate mpas
+export NETCDF="$CONDA_PREFIX"
 export PNETCDF="$CONDA_PREFIX"
 export PIO="$HOME/software"
 
@@ -135,13 +156,45 @@ make -j8 gfortran \
   NETCDF="$NETCDF" \
   PNETCDF="$PNETCDF" \
   PRECISION=double
+```
 
+For `init_atmosphere` (run as a second invocation — the Makefile builds
+one core per invocation):
+```bash
 make -j8 gfortran \
   CORE=init_atmosphere \
   PIO="$PIO" \
   NETCDF="$NETCDF" \
   PNETCDF="$PNETCDF" \
   PRECISION=double
+```
+
+A successful build ends with the MPAS banner. On this host it prints:
+
+```
+MPAS was built with default double-precision reals.
+Debugging is off.
+Parallel version is on.
+Using the mpi_f08 module.
+...
+MPAS was not linked with the MUSICA-Fortran library.
+MPAS was NOT linked with the Scotch graph partitioning library.
+...
+Using the PIO 2.x library.
+MPAS was built with the embedded ESMF timekeeping library.
+```
+
+`atmosphere_model` (≈9 MB) is left in the repo root.
+
+#### One-liner rebuild (this host)
+
+For convenience, the full command used on this host:
+
+```bash
+source ~/miniconda3/etc/profile.d/conda.sh && conda activate mpas && \
+  export NETCDF="$CONDA_PREFIX" PNETCDF="$CONDA_PREFIX" PIO="$HOME/software" && \
+  make -j8 gfortran CORE=atmosphere \
+    PIO="$PIO" NETCDF="$NETCDF" PNETCDF="$PNETCDF" PRECISION=double
 ```
 
 #### GCC Build Technical Details

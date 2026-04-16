@@ -94,6 +94,43 @@ tail -20 log.atmosphere.0000.out
 
 Look for final timestep and timing statistics.
 
+### Observed behavior on this host
+
+The following values were captured from a clean 8-rank run of the
+supercell case on this machine (conda-forge gfortran build, see
+[BUILD.md](BUILD.md)). Use them as a sanity check that a fresh build is
+producing the right answer.
+
+| Metric | Value |
+|--------|-------|
+| Ranks | 8 (`supercell.graph.info.part.8`) |
+| Timestep | 3.0 s |
+| Total steps | 2400 (for the default 2-hour run) |
+| Wall time per integration step | ≈ 0.47 s |
+| Full-run wall time (projected) | ≈ 19 min |
+| `output.nc` size at completion | ≈ 4.6 GB |
+
+During the first ~50 minutes of simulated time, typical per-step
+diagnostics look like:
+
+```
+global min, max w       -20.75 ...  47.60   (m/s)
+global min, max u       -41.42 ...  41.43   (m/s)
+global min, max scalar 1  0.0  ...  0.0157  (qv)
+global min, max scalar 2  0.0  ...  0.0049  (qc)
+global min, max scalar 3  0.0  ...  0.0176  (qr)
+Timing for integration step: ~0.47 s
+```
+
+A strong updraft (`w` peaking around +47 m/s by t ≈ 50 min) and the
+Kessler scalars (`qv`, `qc`, `qr`) all non-negative are the two quick
+signs that the dynamics-transport coupling and microphysics are working.
+
+The typical smoke test used in this repo is to run through 50–60
+simulated minutes (≈ 7–8 min wall time) and confirm these ranges, then
+kill the run. A full 2-hour simulation is only needed when a complete
+`output.nc` is required.
+
 ### Quick Run Script
 
 Create a helper script `run.sh`:
