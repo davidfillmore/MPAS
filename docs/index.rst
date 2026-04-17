@@ -1,5 +1,5 @@
-MPAS
-====
+Model for Prediction Across Scales
+==================================
 
 .. note::
 
