@@ -155,9 +155,11 @@ Another option for distributing the $\zeta$ levels given using the following fun
 For $(k-1)/(n-1) < \zeta_l$
 
 $$
-\zeta(k) = z_{\mathrm{top}}\left[\,a_s\left(\frac{k-1}{n-1}\right)
-+ \bigl[3(1-a_t) + 2(a_t-a_s)\zeta_l\bigr]\left(\frac{1}{\zeta_l}\frac{k-1}{n-1}\right)^{2}
-- \bigl[2(1-a_t) + (a_t-a_s)\zeta_l\bigr]\left(\frac{1}{\zeta_l}\frac{k-1}{n-1}\right)^{3}\right].
+\begin{aligned}
+\zeta(k) = z_{\mathrm{top}}\Bigl\{{}&a_s\!\left(\frac{k-1}{n-1}\right) \\
+&+ \bigl[3(1-a_t) + 2(a_t-a_s)\zeta_l\bigr]\!\left(\frac{1}{\zeta_l}\frac{k-1}{n-1}\right)^{\!2} \\
+&- \bigl[2(1-a_t) + (a_t-a_s)\zeta_l\bigr]\!\left(\frac{1}{\zeta_l}\frac{k-1}{n-1}\right)^{\!3}\Bigr\}.
+\end{aligned}
 $$ (eq:2.2)
 
 else
@@ -176,7 +178,7 @@ We note here that users could replace any of these analytic functions for $\zeta
 
 ### 2.2.2 Hybrid smoothed terrain-following coordinate
 
-Given the 1D computational coordinate $\zeta$, the the physical heights $z(\zeta, \vec{x})$ of the interface levels must be set. To accomplish this MPAS-Atmosphere employs a hybrid smoothed terrain-following vertical coordinate described in Klemp (2011, equation 4):
+Given the 1D computational coordinate $\zeta$, the physical heights $z(\zeta, \vec{x})$ of the interface levels must be set. To accomplish this MPAS-Atmosphere employs a hybrid smoothed terrain-following vertical coordinate described in Klemp (2011, equation 4):
 
 $$
 z = \zeta + A\,h_s(\zeta, \vec{x}),
@@ -237,15 +239,19 @@ For earth applications, the generation of the full 3D mesh and its coordinate su
 There is a need to interpolate layer variables to interfaces, and to interpolate interface variables to layers. For the latter, we take the average of the interface variables values from the two surrounding interface to set the layer value given that a layer lies halfway between the interfaces. We have two methods to interpolate layer values to an interface. The first is to do a linear in $\zeta$ interpolation of the layer value to the interface. Taking into account that the layers lie halfway between interfaces, we can write this interpolation as
 
 $$
-\phi_{\mathrm{int}}(k) = \frac{\Delta\zeta_w(k-1)}{\Delta\zeta_w(k) + \Delta\zeta_w(k-1)}\,\phi_{\mathrm{layer}}(k)
-+ \frac{\Delta\zeta_w(k)}{\Delta\zeta_w(k) + \Delta\zeta_w(k-1)}\,\phi_{\mathrm{layer}}(k-1).
+\begin{aligned}
+\phi_{\mathrm{int}}(k) = {}&\frac{\Delta\zeta_w(k-1)}{\Delta\zeta_w(k) + \Delta\zeta_w(k-1)}\,\phi_{\mathrm{layer}}(k) \\
+&+ \frac{\Delta\zeta_w(k)}{\Delta\zeta_w(k) + \Delta\zeta_w(k-1)}\,\phi_{\mathrm{layer}}(k-1).
+\end{aligned}
 $$ (eq:2.9)
 
 The second approach is to vertically integrate the quantity between the layers containing the interface and divide by the height difference between the two layers. We assume the quantity is constant between the interfaces, and in this case the result simply switches the weights in {eq}`eq:2.9` between the two layer values, i.e.
 
 $$
-\phi_{\mathrm{int}}(k) = \frac{\Delta\zeta_w(k)}{\Delta\zeta_w(k) + \Delta\zeta_w(k-1)}\,\phi_{\mathrm{layer}}(k)
-+ \frac{\Delta\zeta_w(k-1)}{\Delta\zeta_w(k) + \Delta\zeta_w(k-1)}\,\phi_{\mathrm{layer}}(k-1).
+\begin{aligned}
+\phi_{\mathrm{int}}(k) = {}&\frac{\Delta\zeta_w(k)}{\Delta\zeta_w(k) + \Delta\zeta_w(k-1)}\,\phi_{\mathrm{layer}}(k) \\
+&+ \frac{\Delta\zeta_w(k-1)}{\Delta\zeta_w(k) + \Delta\zeta_w(k-1)}\,\phi_{\mathrm{layer}}(k-1).
+\end{aligned}
 $$ (eq:2.10)
 
 :::{admonition} MPAS code

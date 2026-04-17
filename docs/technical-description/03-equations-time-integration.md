@@ -48,7 +48,10 @@ $$
 $$ (eq:3.6)
 
 $$
-\frac{\partial W}{\partial t} = -\,\frac{\rho_d}{\rho_m}\!\left[\frac{\partial p}{\partial\zeta} + g\left(\frac{r_o}{r}\right)^{\!2}\tilde{\rho}_m\right] - \bigl(\nabla\cdot\mathbf{V}\,w\bigr)_\zeta + F_W + \beta_d\,\tilde{\rho}_d\!\left(\frac{\mathbf{v}_H\cdot\mathbf{v}_H}{r} + e\,\mathbf{v}_H\cdot\mathbf{i}\right),
+\begin{aligned}
+\frac{\partial W}{\partial t} = {}&-\frac{\rho_d}{\rho_m}\!\left[\frac{\partial p}{\partial\zeta} + g\!\left(\frac{r_o}{r}\right)^{\!2}\tilde{\rho}_m\right] - \bigl(\nabla\cdot\mathbf{V}\,w\bigr)_\zeta + F_W \\
+&+ \beta_d\,\tilde{\rho}_d\!\left(\frac{\mathbf{v}_H\cdot\mathbf{v}_H}{r} + e\,\mathbf{v}_H\cdot\mathbf{i}\right),
+\end{aligned}
 $$ (eq:3.7)
 
 $$
@@ -77,7 +80,7 @@ $$
 
 where $\mathbf{V}_{\mathbf{H}}$ and $\mathbf{v}_{\mathbf{H}}$ are the horizontal momentum and velocity, respectively.
 
-The current release of MPAS, Version 8, does not contain the solver for the the deep atmosphere (full) equations, rather MPAS-Atmosphere employs the shallow atmosphere approximation in the release. A MPAS-Atmosphere solver for the full equations {eq}`eq:3.6`–{eq}`eq:3.10` has been developed and tested as reported in Skamarock et al. (2021a).
+The current release of MPAS, Version 8, does not contain the solver for the deep atmosphere (full) equations, rather MPAS-Atmosphere employs the shallow atmosphere approximation in the release. A MPAS-Atmosphere solver for the full equations {eq}`eq:3.6`–{eq}`eq:3.10` has been developed and tested as reported in Skamarock et al. (2021a).
 
 ## 3.2 Time Integration Overview
 
@@ -216,7 +219,7 @@ $$ (eq:3.25)
 $$
 \begin{aligned}
 \delta_\tau \Omega'' + \zeta_z\frac{\rho_d^t}{\rho_m^t}&\!\left[\gamma\,R_d\,\pi^t\,\partial_\zeta\!\left(\zeta_z\overline{\Theta''_m}^\tau\right) - g\,\tilde{\rho}_m^t\frac{R_d}{c_v}\frac{\overline{\Theta''_m}^\tau}{\Theta^t_m}\right] \\
-&+ \zeta_z\,g\,\overline{\tilde{\rho}''_d}^\tau = \mathbf{R}^t_{V_H}\cdot\nabla_h\zeta + R^t_w\zeta_z
+&+ \zeta_z\,g\,\overline{\tilde{\rho}''_d}^\tau = \mathbf{R}^t_{V_H}\cdot\nabla_h\zeta + R^t_W\,\zeta_z
 \end{aligned}
 $$ (eq:3.26)
 
@@ -234,11 +237,11 @@ $$
 \overline{\phi}^{\,\tau} = \frac{1+\epsilon}{2}\,\phi^{\tau+\Delta\tau} + \frac{1-\epsilon}{2}\,\phi^{\tau}
 $$ (eq:3.29)
 
-is a time averaging of $\phi$ and represents the vertically semi-implicit time differencing of the vertically-propagating acoustic modes and buoyancy oscillation modes in the compressible non-hydrostatic system. For the system {eq}`eq:3.28`–{eq}`eq:3.26` the vertically semi-implicit scheme will be second-order accurate and neutral (non-damping) for $\epsilon = 0$ and will be damping for $\epsilon > 0$. This damping mechanism is discussed further in section 5.4. The terms $\mathbf{R}^t_{V_h}$, $R^t_w$, $R^t_{\Theta_m}$ and $R^t_{\tilde{\rho}_m}$ in {eq}`eq:3.25`–{eq}`eq:3.28` are the RHS terms in {eq}`eq:3.15`–{eq}`eq:3.18`, that is
+is a time averaging of $\phi$ and represents the vertically semi-implicit time differencing of the vertically-propagating acoustic modes and buoyancy oscillation modes in the compressible non-hydrostatic system. For the system {eq}`eq:3.28`–{eq}`eq:3.26` the vertically semi-implicit scheme will be second-order accurate and neutral (non-damping) for $\epsilon = 0$ and will be damping for $\epsilon > 0$. This damping mechanism is discussed further in section 5.4. The terms $\mathbf{R}^t_{V_H}$, $R^t_W$, $R^t_{\Theta_m}$ and $R^t_{\tilde{\rho}_d}$ in {eq}`eq:3.25`–{eq}`eq:3.28` are the RHS terms in {eq}`eq:3.15`–{eq}`eq:3.18`, that is
 
 $$
 \begin{aligned}
-\mathbf{R}^t_{V_h} = {}&\left[-\frac{\rho_d}{\rho_m}\!\left(\nabla_\zeta\!\left(\frac{p'}{\zeta_z}\right) + g\,z_H\tilde{\rho}'_m\right) - \eta\,\mathbf{k}\times\mathbf{V}_H - \tilde{\rho}_d\,\nabla_\zeta K \right. \\
+\mathbf{R}^t_{V_H} = {}&\left[-\frac{\rho_d}{\rho_m}\!\left(\nabla_\zeta\!\left(\frac{p'}{\zeta_z}\right) + g\,z_H\tilde{\rho}'_m\right) - \eta\,\mathbf{k}\times\mathbf{V}_H - \tilde{\rho}_d\,\nabla_\zeta K \right. \\
 &\left. - \mathbf{v}_H\nabla_\zeta\cdot\mathbf{V} - \frac{\partial\Omega\,\mathbf{v}_H}{\partial\zeta}\right]_{t_1} + \left[\mathbf{F}_{V_H}\right]_{t_2},
 \end{aligned}
 $$ (eq:3.30)
@@ -313,8 +316,8 @@ where the right-hand-side terms $F_{\Omega^\tau}$, $F_{\Theta^\tau_m}$, and $F_{
 
 $$
 \begin{aligned}
-F_{\Omega^\tau} = {}&\Omega''^{\,\tau} - \Delta\tau\,\frac{1-\epsilon}{2}\!\left\{\zeta_z\,\frac{\rho_d^t}{\rho_m^t}\!\left[\gamma R_d\pi^t\partial_\zeta\!\bigl(\zeta_z\Theta''^{\,\tau}_m\bigr) - g\,\tilde{\rho}_m\frac{R_d}{c_v}\frac{\Theta''^{\,\tau}_m}{\Theta^t_m}\right] + \zeta_z\,g\,\tilde{\rho}''^{\,\tau}_d\right\} \\
-&+ \Delta\tau\!\left[\delta_\tau\mathbf{V}''^{\,\tau+\Delta\tau}_{\mathbf{h}}\cdot\nabla_h\zeta + \zeta_z R^t_w\right]
+F_{\Omega^\tau} = {}&\Omega''^{\,\tau} - \Delta\tau\,\frac{1-\epsilon}{2}\!\left\{\zeta_z\,\frac{\rho_d^t}{\rho_m^t}\!\left[\gamma R_d\pi^t\partial_\zeta\!\bigl(\zeta_z\Theta''^{\,\tau}_m\bigr) - g\,\tilde{\rho}_m\frac{R_d}{c_v}\frac{\Theta''^{\,\tau}_m}{\Theta^t_m}\right]\right. \\
+&\left.\hphantom{{}-\Delta\tau\,\frac{1-\epsilon}{2}\!} + \zeta_z\,g\,\tilde{\rho}''^{\,\tau}_d\right\} + \Delta\tau\!\left[\delta_\tau\mathbf{V}''^{\,\tau+\Delta\tau}_{\mathbf{h}}\cdot\nabla_h\zeta + \zeta_z R^t_W\right]
 \end{aligned}
 $$ (eq:3.40)
 
@@ -328,7 +331,7 @@ $$ (eq:3.42)
 
 **Implicit Acoustic Solver**
 
-Equations {eq}`eq:3.37`–{eq}`eq:3.39` form a coupled system for $(\Omega'', \Theta''_m, \rho''_d)$ at time $\tau + \Delta\tau$. The solution of this system is obtained using {eq}`eq:3.38` and {eq}`eq:3.39` to eliminate $\Theta''^{\,\tau+\Delta\tau}_m$ and $\tilde{\rho}''^{\,\tau+\Delta\tau}_d$ from {eq}`eq:3.37`, resulting in an equation for the single unknown variable $\Omega''^{\,\tau+\Delta\tau}$. The variables $\Theta''_m$ and $\tilde{\rho}''_d$ are vertically staggered relative to $\Omega''$, and interpolation of these variables, along with vertical derivatives, results in an equation for $\Omega''^{\,\tau+\Delta\tau}$ where the new value at a level depends on the new values above and below it thus requiring us to solve a tridiagonal matrix. A description of the formulation of the tridiagonal system and solver in the acoustic step is given in Appendix A. Subsequent to the tridiagonal solution for $\Omega''^{\,\tau+\Delta\tau}$, vertical velocity damping is applied to damp vertically-propagating gravity waves (see section 3.4.3), after which $\Theta''^{\,\tau\Delta\tau}_m$ and $\rho''^{\,\tau\Delta\tau}_d$ are computed by back substitution of $\Omega''^{\,\tau+\Delta\tau}$ into {eq}`eq:3.38` and {eq}`eq:3.39`.
+Equations {eq}`eq:3.37`–{eq}`eq:3.39` form a coupled system for $(\Omega'', \Theta''_m, \rho''_d)$ at time $\tau + \Delta\tau$. The solution of this system is obtained using {eq}`eq:3.38` and {eq}`eq:3.39` to eliminate $\Theta''^{\,\tau+\Delta\tau}_m$ and $\tilde{\rho}''^{\,\tau+\Delta\tau}_d$ from {eq}`eq:3.37`, resulting in an equation for the single unknown variable $\Omega''^{\,\tau+\Delta\tau}$. The variables $\Theta''_m$ and $\tilde{\rho}''_d$ are vertically staggered relative to $\Omega''$, and interpolation of these variables, along with vertical derivatives, results in an equation for $\Omega''^{\,\tau+\Delta\tau}$ where the new value at a level depends on the new values above and below it thus requiring us to solve a tridiagonal matrix. A description of the formulation of the tridiagonal system and solver in the acoustic step is given in Appendix A. Subsequent to the tridiagonal solution for $\Omega''^{\,\tau+\Delta\tau}$, vertical velocity damping is applied to damp vertically-propagating gravity waves (see section 3.4.3), after which $\Theta''^{\,\tau+\Delta\tau}_m$ and $\tilde{\rho}''^{\,\tau+\Delta\tau}_d$ are computed by back substitution of $\Omega''^{\,\tau+\Delta\tau}$ into {eq}`eq:3.38` and {eq}`eq:3.39`.
 
 :::{admonition} MPAS code
 :class: note
@@ -359,10 +362,10 @@ $$ (eq:3.44)
 The damping coefficient $R_\Omega$ is specified as
 
 $$
-R_\Omega = \nu\,\sin^2\!\left[\frac{\pi}{2}\frac{(z-z_d)}{(z_t-z_d)}\right] \quad \text{for } z_d \le z \le z_t,\ \text{otherwise } z = 0,
+R_\Omega = \nu\,\sin^2\!\left[\frac{\pi}{2}\frac{(z-z_d)}{(z_t-z_d)}\right] \quad \text{for } z_d \le z \le z_t,\ \text{otherwise } R_\Omega = 0,
 $$
 
-where $z$ is the height of an $\Omega$ point, $z_d$ is the height above which the absorbing layer is active, $z_t$ is the height of the model top, and $\nu$ is the damping rate and has units $T^{-1}$. After the velocity $\Omega''^{\,\tau+\Delta\tau}$ is computed using {eq}`eq:3.44`, $\Theta''^{\,\tau\Delta\tau}_m$ and $\rho''^{\,\tau\Delta\tau}_d$ are computed by back substitution of $\Omega''^{\,\tau+\Delta\tau}$ into {eq}`eq:3.38` and {eq}`eq:3.39`.
+where $z$ is the height of an $\Omega$ point, $z_d$ is the height above which the absorbing layer is active, $z_t$ is the height of the model top, and $\nu$ is the damping rate and has units $\mathrm{s}^{-1}$. After the velocity $\Omega''^{\,\tau+\Delta\tau}$ is computed using {eq}`eq:3.44`, $\Theta''^{\,\tau+\Delta\tau}_m$ and $\tilde{\rho}''^{\,\tau+\Delta\tau}_d$ are computed by back substitution of $\Omega''^{\,\tau+\Delta\tau}$ into {eq}`eq:3.38` and {eq}`eq:3.39`.
 
 :::{admonition} MPAS code
 :class: note
@@ -375,7 +378,7 @@ The gravity wave filter application takes place in subroutine `atm_advance_acous
 The acoustic filter in MPAS follows (Klemp et al. 2018) and damps 3D divergence to filter acoustic waves. (Klemp et al. 2018) propose that the appropriate divergence to damp is $\nabla\cdot(\mathbf{V}\Theta_m)$ where $\mathbf{V} = (\mathbf{V}_H, \Omega)$. In MPAS, we use the time-rate-of-change of $\Theta''_m$, given in {eq}`eq:3.27`, to define the divergence which includes diabatic heating. After {eq}`eq:3.25`–{eq}`eq:3.28` are advanced along with the gravity-wave filter, the acoustic filter is applied as an additional update to the horizontal momentum $\mathbf{V}_{\mathbf{H}}''^{\,*}$:
 
 $$
-\mathbf{V}_{\mathbf{H}}''^{\,\tau+\Delta\tau} = \mathbf{V}_{\mathbf{H}}''^{\,*} + \frac{\gamma_D\,\Delta x}{\Theta^t_m}\,\delta_\tau\Theta''_m,
+\mathbf{V}_{\mathbf{H}}''^{\,\tau+\Delta\tau} = \mathbf{V}_{\mathbf{H}}''^{\,*} + \frac{\gamma_d\,\Delta x}{\Theta^t_m}\,\delta_\tau\Theta''_m,
 $$ (eq:3.45)
 
 where $\delta_\tau\Theta''_m = (\Theta''^{\,\tau+\Delta\tau}_m - \Theta''^{\,\tau}_m)/\Delta\tau$ as computed in the acoustic step. The damping coefficient $\gamma_d$ has a default value of 0.1. See (Klemp et al. 2018) for an analysis of this approach, specifically the discussion following their equations (21)–(26).

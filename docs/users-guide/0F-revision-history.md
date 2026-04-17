@@ -9,7 +9,7 @@
   - Microphysics tendency cap: `config_microphysics_top` in the `&physics` record.
   - Hybrid vertical coordinate now the default in `init_atmosphere`: `config_hybrid_coordinate` and `config_hybrid_top_z` in the `&vertical_grid` record of `namelist.init_atmosphere`.
   - Conditional MUSICA/MICM namelist record and `config_micm_file` option (only when built with `USE_MUSICA=true`).
-- Corrected units for several existing options: `config_visc4_2dsmag` (m s<sup>-1</sup>), `config_xnutr` (s<sup>-1</sup>), and `config_mpas_cam_coef` (m s<sup>-1</sup>). Corrected field units: `dusfcg`, `dvsfcg` (Pa); `dtaux3d`, `dtauy3d` (m s<sup>-2</sup>).
+- Corrected units for several existing options: `config_visc4_2dsmag` ($\mathrm{m}\,\mathrm{s}^{-1}$), `config_xnutr` ($\mathrm{s}^{-1}$), and `config_mpas_cam_coef` ($\mathrm{m}\,\mathrm{s}^{-1}$). Corrected field units: `dusfcg`, `dvsfcg` (Pa); `dtaux3d`, `dtauy3d` ($\mathrm{m}\,\mathrm{s}^{-2}$).
 - Renamed / restructured deformation-coefficient fields: `defc_a` and `defc_b` have been replaced by the set `deformation_coef_c2`, `deformation_coef_s2`, `deformation_coef_cs`, `deformation_coef_c`, `deformation_coef_s`. These are now computed at model startup rather than read from the input file.
 - Split the former `kdiff` field into `eddy_visc_vert` and `eddy_visc_horz`. New LES diagnostics: `prandtl_3d_inv`, `bn2`.
 - Ertel potential-vorticity diagnostics (`ertel_pv`, `u_pv`, `v_pv`, `theta_pv`, `vort_pv`, `iLev_DT`, and the associated `depv_dt_*` and `dtheta_dt_mp` fields) have been removed from the default `output` stream. They remain available for opt-in via a user-defined output stream.

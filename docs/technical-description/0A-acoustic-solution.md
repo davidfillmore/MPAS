@@ -31,7 +31,10 @@ $$
 $$ (eq:A.1)
 
 $$
-\Theta''^{\,\tau+\Delta\tau}_m(k) = -\frac{1}{\Delta\zeta_w(k)}\!\left[C_\Theta(k+1)\cdot\Omega''^{\,\tau+\Delta\tau}(k+1) - C_\Theta(k)\cdot\Omega''^{\,\tau+\Delta\tau}(k)\right] + \Delta\tau\,F_{\Theta^\tau_m}(k),
+\begin{aligned}
+\Theta''^{\,\tau+\Delta\tau}_m(k) = {}&-\frac{1}{\Delta\zeta_w(k)}\!\Bigl[C_\Theta(k+1)\cdot\Omega''^{\,\tau+\Delta\tau}(k+1) \\
+&\hphantom{{}-\frac{1}{\Delta\zeta_w(k)}\!\Bigl[\,} - C_\Theta(k)\cdot\Omega''^{\,\tau+\Delta\tau}(k)\Bigr] + \Delta\tau\,F_{\Theta^\tau_m}(k),
+\end{aligned}
 $$ (eq:A.2)
 
 $$
@@ -78,7 +81,7 @@ C_\rho(k) &\;-\; \texttt{cofrz}
 \end{aligned}
 $$
 
-These coefficients are used in subroutine `atm_compute_vert_imp_coefs` to compute more coefficients (see below) for the tridiagonal solver and are used in the acoustic timestep in subroutine `atm_advance_acoustic_step` to evaluate contributions to the the time level $\tau$ operators ($F_{\tilde{\rho}^\tau}$, $F_{\Theta^\tau_m}$ and $F_{\Omega^\tau}$) and in the back substitution to recover $\Theta''_m$ and $\tilde{\rho}''$ at $\tau + \Delta\tau$.
+These coefficients are used in subroutine `atm_compute_vert_imp_coefs` to compute more coefficients (see below) for the tridiagonal solver and are used in the acoustic timestep in subroutine `atm_advance_acoustic_step` to evaluate contributions to the time level $\tau$ operators ($F_{\tilde{\rho}^\tau}$, $F_{\Theta^\tau_m}$ and $F_{\Omega^\tau}$) and in the back substitution to recover $\Theta''_m$ and $\tilde{\rho}''$ at $\tau + \Delta\tau$.
 :::
 
 Using {eq}`eq:A.2` and {eq}`eq:A.3` to eliminate $\Theta''^{\,\tau+\Delta\tau}_m$ and $\tilde{\rho}''^{\,\tau+\Delta\tau}$ in {eq}`eq:A.1` we arrive at the following equation for $\Omega''^{\,\tau+\Delta\tau}$:
@@ -88,7 +91,8 @@ $$
 \Omega''^{\,\tau+\Delta\tau}(k-1)\cdot{}&\Bigl[-C_{\Omega\Theta z}(k)\cdot C_\Theta(k-1)\cdot\zeta_z(k-1)/\Delta\zeta(k-1) \\
 &\quad + C_{\Omega\rho}(k)\cdot C_\rho(k-1) \\
 &\quad - C_{\Omega\Theta}(k-1)\cdot C_\Theta(k-1)/\Delta\zeta(k-1)\Bigr] \\
-+\Omega''^{\,\tau+\Delta\tau}(k)\cdot{}&\Bigl[1 + C_{\Omega\Theta z}(k)\bigl(C_\Theta(k)\cdot\zeta_z(k)/\Delta\zeta(k) + C_\Theta(k-1)\cdot\zeta_z(k-1)/\Delta\zeta(k-1)\bigr) \\
++\Omega''^{\,\tau+\Delta\tau}(k)\cdot{}&\Bigl[1 + C_{\Omega\Theta z}(k)\bigl(C_\Theta(k)\cdot\zeta_z(k)/\Delta\zeta(k) \\
+&\qquad\quad + C_\Theta(k-1)\cdot\zeta_z(k-1)/\Delta\zeta(k-1)\bigr) \\
 &\quad - C_\Theta(k)\cdot\bigl(C_{\Omega\Theta}(k)/\Delta\zeta(k) - C_{\Omega\Theta}(k-1)/\Delta\zeta(k-1)\bigr) \\
 &\quad + C_{\Omega\rho}(k)\cdot\bigl(C_\rho(k) - C_\rho(k-1)\bigr)\Bigr] \\
 +\Omega''^{\,\tau+\Delta\tau}(k+1)\cdot{}&\Bigl[-C_{\Omega\Theta z}(k)\cdot C_\Theta(k+1)\cdot\zeta_z(k)/\Delta\zeta(k) \\

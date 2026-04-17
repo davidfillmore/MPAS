@@ -19,7 +19,7 @@ $$
 \frac{\partial(\tilde{\rho}_d\phi)}{\partial t} = \cdots + \nabla_\zeta\cdot\tilde{\rho}_d K\,\nabla_\zeta\phi,
 $$ (eq:5.1)
 
-where the variable $K$ is an eddy viscosity with units $m^2 s^{-1}$. The discrete form of Laplacian in {eq}`eq:5.1` for $\theta$ (a variable that is not vertically staggered) is
+where the variable $K$ is an eddy viscosity with units $\mathrm{m}^2\,\mathrm{s}^{-1}$. The discrete form of Laplacian in {eq}`eq:5.1` for $\theta$ (a variable that is not vertically staggered) is
 
 $$
 \nabla_\zeta\cdot\tilde{\rho}_d K\,\nabla_\zeta\theta \;\to\; \frac{1}{A_i}\sum_{e_i}L_{e_i}\,\overline{\tilde{\rho}_d}\,\overline{K}\,(\mathbf{n}_{e_i}\cdot\nabla\theta).
@@ -43,7 +43,7 @@ $$
 \frac{\partial(\tilde{\rho}_d\phi)}{\partial t} = \cdots - \nabla\cdot\bigl(\tilde{\rho}_d\nu_4\nabla(\nabla_\zeta\cdot\nabla_\zeta\phi)\bigr),
 $$ (eq:5.4)
 
-where the hyperviscosity $\nu_4$ has units $m^4 s^{-1}$. Defining a discrete turbulent flux divergence operator $T_2(\phi)$ as
+where the hyperviscosity $\nu_4$ has units $\mathrm{m}^4\,\mathrm{s}^{-1}$. Defining a discrete turbulent flux divergence operator $T_2(\phi)$ as
 
 $$
 \nabla_\zeta\cdot\nabla_\zeta\phi \;\to\; \frac{1}{A_i}\sum_{e_i}L_{e_i}\,(\mathbf{n}_{e_i}\cdot\nabla\phi) = T_2(\phi),
@@ -99,7 +99,7 @@ $$
 \nabla_H\cdot\mathbf{v} \;\to\; \frac{1}{A_i}\sum_{n_{e_i}}(L_{e_i}\mathbf{v}_{H,e_i}\cdot\mathbf{n}) = D_i,
 $$ (eq:5.10)
 
-where $L_{e_i}$ is the length of the edge $e_i$ and $A_i$ is the area of cell $i$. Referring to the horizontal MPAS mesh given in Figure 2.1, the gradient of the divergence to update the horizontal velocity $u_{13}$, where positive $u_{13}$ iindicates flow from cell $C$ to cell $A$, is given as
+where $L_{e_i}$ is the length of the edge $e_i$ and $A_i$ is the area of cell $i$. Referring to the horizontal MPAS mesh given in Figure 2.1, the gradient of the divergence to update the horizontal velocity $u_{13}$, where positive $u_{13}$ indicates flow from cell $C$ to cell $A$, is given as
 
 $$
 \frac{\partial}{\partial x_i}\nabla_H\cdot\mathbf{v} \;\to\; \frac{D_A - D_C}{|\overrightarrow{CA}|},
@@ -134,7 +134,7 @@ The second-order and fourth-order horizontal filtering for $u$ are computed in s
 
 ## 5.3 Eddy Viscosities and Hyper-Viscosities
 
-There are two options for specifying the 2nd-order eddy viscosities and the 4th-order hyper-viscosities. Fixed, constant values of the viscosities can be specified using the *2d_fixed* option. Fixed viscosity (with units of $m^2 s^{-1}$) and hypervisocity (with units of $m^4 s^{-1}$) values are specified for momentum and theta filtering, and the default values are zero, so they must be set when configuring an MPAS application using the *2d_fixed* option. This option is used for idealized simulations, often when a converged solution is sought. The eddy viscosity and hypervisocity used in the filtering of theta is divided by the Prandtl number which has a default value of 1.
+There are two options for specifying the 2nd-order eddy viscosities and the 4th-order hyper-viscosities. Fixed, constant values of the viscosities can be specified using the *2d_fixed* option. Fixed viscosity (with units of $\mathrm{m}^2\,\mathrm{s}^{-1}$) and hypervisocity (with units of $\mathrm{m}^4\,\mathrm{s}^{-1}$) values are specified for momentum and theta filtering, and the default values are zero, so they must be set when configuring an MPAS application using the *2d_fixed* option. This option is used for idealized simulations, often when a converged solution is sought. The eddy viscosity and hypervisocity used in the filtering of theta is divided by the Prandtl number which has a default value of 1.
 
 The second option for filtering employs a spatially and temporally varying 2nd-order eddy viscosity that is computed using the horizontal deformation following Smagorinsky (1963).
 
@@ -170,7 +170,7 @@ The coefficient $c_s$ can be set in the `namelist.atmosphere` file with the vari
 
 In section 3.4.2 describing the acoustic timestep, the evolution equations for the vertical mass flux $\Omega$ {eq}`eq:3.37`, the coupled potential temperature $\Theta_m$ {eq}`eq:3.38`, and the dry air density $\tilde{\rho}_d$ {eq}`eq:3.39`, with their corresponding right-hand-side terms {eq}`eq:3.40`, {eq}`eq:3.41`, and {eq}`eq:3.42`, represent a semi-implicit integration of vertically-propagating acoustic and gravity waves. In these equations the terms evaluated at the new time level $(\tau + \Delta\tau)$ are multiplied by the factor $(1 + \epsilon)/2$ and the time $\tau$ terms are multiplied with a factor of $(1 - \epsilon)/2$. For $\epsilon > 0$ this will damp acoustic and gravity waves, although given the small acoustic time step it is only the high frequency acoustic waves that experience significant damping.
 
-The off-centering in the semi-implicit time step is perhaps most important for stabilizing the integration of the integration when the coordinate surfaces are sloped. As described in Ikawa (1988) and Dudhia (1995), a linear analysis shows that the stability of the scheme is achieved when the coordinate surface slope is less than the off-centering parameter in the vertically semi-implicit solution:
+The off-centering in the semi-implicit time step is perhaps most important for stabilizing the integration when the coordinate surfaces are sloped. As described in Ikawa (1988) and Dudhia (1995), a linear analysis shows that the stability of the scheme is achieved when the coordinate surface slope is less than the off-centering parameter in the vertically semi-implicit solution:
 
 $$
 \left.\frac{\partial z}{\partial x}\right|_\zeta < \epsilon,
@@ -197,7 +197,7 @@ Another option for filtering vertically-propagating gravity waves is to enable a
 :::{admonition} MPAS code
 :class: note
 
-The 2nd-order horizontal filter is included as part of the Runge-Kutta time-integration tendencies computed in subroutine `atm_compute_dyn_tend` found in `MPAS/src/core_atmosphere/dynamics/mpas_atm_time_integration.F`. The filter is enabled by setting the `namelist.atmosphere` parameter `config_mpas_cam_coef` to a non-zero value between 0 and 1. The default value is zero (off). The 2nd-order filter is applied starting at the integer `namelist.atmosphere` variable `config_number_cam_damping_levels` number of levels from the model top. The maximum value of the eddy viscosity is $8.333\times\Delta x\times$`config_mpas_cam_coef` ($m^2/s$). Setting `config_mpas_cam_coef` to 1 recovers the typical maximum value used in the climate configuration, while 0.2 is the typical value used in other applications.
+The 2nd-order horizontal filter is included as part of the Runge-Kutta time-integration tendencies computed in subroutine `atm_compute_dyn_tend` found in `MPAS/src/core_atmosphere/dynamics/mpas_atm_time_integration.F`. The filter is enabled by setting the `namelist.atmosphere` parameter `config_mpas_cam_coef` to a non-zero value between 0 and 1. The default value is zero (off). The 2nd-order filter is applied starting at the integer `namelist.atmosphere` variable `config_number_cam_damping_levels` number of levels from the model top. The maximum value of the eddy viscosity is $8.333\times\Delta x\times$`config_mpas_cam_coef` ($\mathrm{m}^2/\mathrm{s}$). Setting `config_mpas_cam_coef` to 1 recovers the typical maximum value used in the climate configuration, while 0.2 is the typical value used in other applications.
 :::
 
 ### 5.5.3 Rayleigh Damping of the Horizontal Momentum

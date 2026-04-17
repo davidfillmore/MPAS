@@ -34,7 +34,7 @@ $$
 F_2 = \gamma_2(i - 1)/m,
 $$
 
-The default configuration for MPAS sets $\gamma_1 = (0.06\Delta x)^{-1}$ and has units of $1/T$, and the coefficient $\gamma_2 = (0.3\Delta x)^{-1}$ and also has units of $1/T$. The coefficients $\gamma_1$ and $\gamma_2$ are set based on the local mesh size $\Delta x$ so that the filters are appropriately set for a variable-resolution mesh. See Skamarock et al. (2018) section 2b for details on the configuration of these coefficients.
+The default configuration for MPAS sets $\gamma_1 = (0.06\Delta x)^{-1}$ and has units of $\mathrm{s}^{-1}$, and the coefficient $\gamma_2 = (0.3\Delta x)^{-1}$ and also has units of $\mathrm{s}^{-1}$. The coefficients $\gamma_1$ and $\gamma_2$ are set based on the local mesh size $\Delta x$ so that the filters are appropriately set for a variable-resolution mesh. See Skamarock et al. (2018) section 2b for details on the configuration of these coefficients.
 
 ## 7.2 Time Integration
 
@@ -79,7 +79,10 @@ The lateral boundary condition code for scalar transport, section (4), is in a `
 For the horizontal momentum, the 2nd-order horizontal filter applied in {eq}`eq:7.1` in the relaxation region takes the form given in {eq}`eq:5.7`. However, we have introduced a coefficient to increase the divergent component of the filtering, similar to additional filtering applied to the horizontal filter for the 4th-order background filter given in section 5.2 equation {eq}`eq:5.12`. The resulting 2nd-order filter applied to the horizontal momentum in the relaxation zone takes the form
 
 $$
-\frac{\partial(\tilde{\rho}_du_i)}{\partial t} = \cdots - \tilde{\rho}\frac{\gamma_2(i-1)}{m}\Delta x^2\!\left(\beta_D\frac{\partial}{\partial x_i}\nabla_H\cdot(\mathbf{v}_{LBC} - \mathbf{v}) - \frac{\partial(\zeta_{LBC} - \zeta)}{\partial x_j}\right).
+\begin{aligned}
+\frac{\partial(\tilde{\rho}_du_i)}{\partial t} = {}&\cdots - \tilde{\rho}\frac{\gamma_2(i-1)}{m}\Delta x^2\!\left(\beta_d\frac{\partial}{\partial x_i}\nabla_H\cdot(\mathbf{v}_{LBC} - \mathbf{v})\right. \\
+&\left.\hphantom{\cdots - \tilde{\rho}\frac{\gamma_2(i-1)}{m}\Delta x^2\!\bigl(} - \frac{\partial(\zeta_{LBC} - \zeta)}{\partial x_j}\right).
+\end{aligned}
 $$ (eq:7.2)
 
 :::{admonition} MPAS code

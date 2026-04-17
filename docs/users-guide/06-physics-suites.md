@@ -77,7 +77,7 @@ Selecting or disabling an individual physics parameterization may be accomplishe
 | Radiation, SW | `config_radt_sw_scheme` | `rrtmg_sw` | RRTMG (WRF 3.8.1) |
 | | | `cam_sw` | CAM (WRF 3.3.1) |
 | Cloud fraction for radiation | `config_radt_cld_scheme` | `cld_fraction` | Xu and Randall (1996) |
-| | | `cld_incidence` | 0/1 cloud fraction depending on q_c + q_i |
+| | | `cld_incidence` | 0/1 cloud fraction depending on $q_c + q_i$ |
 | | | `cld_fraction_thompson` | Thompson cloud fraction scheme |
 | Gravity wave drag by orography | `config_gwdo_scheme` | `bl_ysu_gwdo` | YSU (WRF 4.5) |
 | | | `bl_ugwp_gwdo` | NOAA/GSL orographic gravity wave drag (see also `config_ngw_scheme`) |

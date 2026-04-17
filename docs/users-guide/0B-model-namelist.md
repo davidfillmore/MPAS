@@ -88,7 +88,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | m^2 s^-1 |
+| Units | $\mathrm{m}^2\,\mathrm{s}^{-1}$ |
 | Description | Laplacian eddy viscosity for horizontal diffusion of momentum *(hidden by default)* |
 | Possible Values | Positive real values *(default: 0.0)* |
 
@@ -96,7 +96,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | m^4 s^-1 |
+| Units | $\mathrm{m}^4\,\mathrm{s}^{-1}$ |
 | Description | Biharmonic eddy hyper-viscosity for horizontal diffusion of momentum *(hidden by default)* |
 | Possible Values | Positive real values *(default: 0.0)* |
 
@@ -104,7 +104,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | m^2 s^-1 |
+| Units | $\mathrm{m}^2\,\mathrm{s}^{-1}$ |
 | Description | Laplacian eddy viscosity for vertical diffusion of momentum *(hidden by default)* |
 | Possible Values | Positive real values *(default: 0.0)* |
 
@@ -112,7 +112,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | m^2 s^-1 |
+| Units | $\mathrm{m}^2\,\mathrm{s}^{-1}$ |
 | Description | Laplacian eddy viscosity for horizontal diffusion of theta *(hidden by default)* |
 | Possible Values | Positive real values *(default: 0.0)* |
 
@@ -120,7 +120,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | m^4 s^-1 |
+| Units | $\mathrm{m}^4\,\mathrm{s}^{-1}$ |
 | Description | Biharmonic eddy hyper-viscosity for horizontal diffusion of theta *(hidden by default)* |
 | Possible Values | Positive real values *(default: 0.0)* |
 
@@ -128,7 +128,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | m^2 s^-1 |
+| Units | $\mathrm{m}^2\,\mathrm{s}^{-1}$ |
 | Description | Laplacian eddy viscosity for vertical diffusion of theta *(hidden by default)* |
 | Possible Values | Positive real values *(default: 0.0)* |
 
@@ -160,16 +160,16 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | K m s<sup>-1</sup> |
-| Description | Specified surface kinematic heat flux w'theta', used when `config_les_surface = 'specified'`. |
+| Units | $\mathrm{K}\,\mathrm{m}\,\mathrm{s}^{-1}$ |
+| Description | Specified surface kinematic heat flux $\overline{w'\theta'}$, used when `config_les_surface = 'specified'`. |
 | Possible Values | Any real value *(default: 0.0)* |
 
 ### `config_surface_moisture_flux` (real)
 
 | | |
 |---|---|
-| Units | kg m s<sup>-1</sup> |
-| Description | Specified surface kinematic moisture flux w'q', used when `config_les_surface = 'specified'`. |
+| Units | $\mathrm{kg}\,\mathrm{m}\,\mathrm{s}^{-1}$ |
+| Description | Specified surface kinematic moisture flux $\overline{w'q'}$, used when `config_les_surface = 'specified'`. |
 | Possible Values | Any real value *(default: 0.0)* |
 
 ### `config_surface_drag_coefficient` (real)
@@ -177,7 +177,7 @@ This appendix summarizes the complete set of namelist options available when run
 | | |
 |---|---|
 | Units | - |
-| Description | 10 m drag coefficient C<sub>d</sub>, used in the LES surface flux parameterization. |
+| Description | 10 m drag coefficient $C_d$, used in the LES surface flux parameterization. |
 | Possible Values | Any real value *(default: 0.0)* |
 
 ### `config_len_disp` (real)
@@ -192,8 +192,8 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | m s<sup>-1</sup> |
-| Description | Coefficient multiplied by dx^3 to obtain biharmonic physical hyperviscosity |
+| Units | $\mathrm{m}\,\mathrm{s}^{-1}$ |
+| Description | Coefficient multiplied by $\Delta x^3$ to obtain biharmonic physical hyperviscosity |
 | Possible Values | Non-negative real values *(default: 0.05)* |
 
 ### `config_mix_scalars` (logical)
@@ -378,7 +378,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | s<sup>-1</sup> |
+| Units | $\mathrm{s}^{-1}$ |
 | Description | Maximum w-damping coefficient at model top |
 | Possible Values | 0 <= config_xnutr <= 1 *(default: 0.2)* |
 
@@ -386,7 +386,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | m s<sup>-1</sup> |
+| Units | $\mathrm{m}\,\mathrm{s}^{-1}$ |
 | Description | Coefficient for scaling the 2nd-order horizontal mixing in the mpas_cam absorbing layer *(hidden by default)* |
 | Possible Values | 0 <= config_mpas_cam_coef <= 1, standard value is 0.2 *(default: 0.0)* |
 
@@ -813,7 +813,7 @@ This appendix summarizes the complete set of namelist options available when run
 | | |
 |---|---|
 | Units | - |
-| Description | Time interval between updates of greeness fraction *(hidden by default)* |
+| Description | Time interval between updates of greenness fraction *(hidden by default)* |
 | Possible Values | `'DD_HH:MM:SS'` or `'none'` *(default: 24:00:00)* |
 
 ### `config_bucket_update` (character)
@@ -1140,7 +1140,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | K m^-1 |
+| Units | $\mathrm{K}\,\mathrm{m}^{-1}$ |
 | Description | Deep water lapse rate in 1-d OML model *(hidden by default)* |
 | Possible Values | Real values *(default: 0.14)* |
 

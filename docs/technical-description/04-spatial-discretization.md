@@ -70,8 +70,10 @@ The evaluation of horizontal flux divergence on the Voronoi mesh and its perform
 
 $$
 \begin{aligned}
-\bigl(\mathbf{V}_{\mathbf{H},\mathbf{e_i}}\cdot\mathbf{n}\,\phi_{e_i}\bigr) = {}&\bigl(\mathbf{V}_{\mathbf{H},\mathbf{e_i}}\cdot\mathbf{n}\bigr)\left[\frac{1}{2}(\phi_{c_0} + \phi_{c_i}) - \Delta x^2_{e_i}\,\frac{1}{12}\!\left\{\left(\frac{\partial^2\phi}{\partial x^2_{e_i}}\right)\!\bigg|_{c_i} + \left(\frac{\partial^2\phi}{\partial x^2_{e_i}}\right)\!\bigg|_{c_0}\right\}\right. \\
-&\left. + \mathrm{sign}(\mathbf{V}_{\mathbf{H},\mathbf{e_i}}\cdot\mathbf{n})\,\Delta x^2_{e_i}\,\frac{\beta}{12}\!\left\{\left(\frac{\partial^2\phi}{\partial x^2_{e_i}}\right)\!\bigg|_{c_i} - \left(\frac{\partial^2\phi}{\partial x^2_{e_i}}\right)\!\bigg|_{c_0}\right\}\right],
+\bigl(\mathbf{V}_{\mathbf{H},\mathbf{e_i}}\cdot\mathbf{n}\,\phi_{e_i}\bigr) = \bigl(\mathbf{V}_{\mathbf{H},\mathbf{e_i}}\cdot\mathbf{n}\bigr)\biggl[{}&\tfrac{1}{2}(\phi_{c_0} + \phi_{c_i}) \\
+&- \tfrac{\Delta x^2_{e_i}}{12}\!\left\{\left(\tfrac{\partial^2\phi}{\partial x^2_{e_i}}\right)\!\bigg|_{c_i} + \left(\tfrac{\partial^2\phi}{\partial x^2_{e_i}}\right)\!\bigg|_{c_0}\right\} \\
+&+ \mathrm{sign}(\mathbf{V}_{\mathbf{H},\mathbf{e_i}}\cdot\mathbf{n})\,\tfrac{\beta\,\Delta x^2_{e_i}}{12}\!\left\{\left(\tfrac{\partial^2\phi}{\partial x^2_{e_i}}\right)\!\bigg|_{c_i} \right. \\
+&\qquad\left. - \left(\tfrac{\partial^2\phi}{\partial x^2_{e_i}}\right)\!\bigg|_{c_0}\right\}\biggr],
 \end{aligned}
 $$ (eq:4.7)
 
@@ -105,16 +107,22 @@ are stored in the `adv_coef_3rd(source cells, edge)`. The source cells for each 
 The vertical transport in {eq}`eq:4.6` requires the computation of the vertical fluxes $\Omega\phi$ located at the $(w, \Omega)$ points of the MPAS mesh. We use a similar operator as used for the horizontal fluxes except that we make use of the structured vertical coordinate. The vertical flux at level $k$ in {eq}`eq:4.6` is
 
 $$
-\Omega_{k,i}\,\overline{\phi}^{\,k,i} = \Omega_{k,i}\!\left[\frac{1}{2}(\phi_{k,i} + \phi_{k-1,i}) - \frac{1}{12}\bigl(\delta^2_\zeta\phi_{k,i} + \delta^2_\zeta\phi_{k-1,i}\bigr) + \mathrm{sign}(\Omega)\,\frac{\beta}{12}\bigl(\delta^2_\zeta\phi_{k,i} - \delta^2_\zeta\phi_{k-1,i}\bigr)\right],
+\begin{aligned}
+\Omega_{k,i}\,\overline{\phi}^{\,k,i} = \Omega_{k,i}\!\biggl\{{}&\tfrac{1}{2}(\phi_{k,i} + \phi_{k-1,i}) - \tfrac{1}{12}\bigl(\delta^2_\zeta\phi_{k,i} + \delta^2_\zeta\phi_{k-1,i}\bigr) \\
+&+ \mathrm{sign}(\Omega)\,\tfrac{\beta}{12}\bigl(\delta^2_\zeta\phi_{k,i} - \delta^2_\zeta\phi_{k-1,i}\bigr)\biggr\},
+\end{aligned}
 $$
 
 where $\delta^2_\zeta\phi_{k,i} = \phi_{k+1,i} - 2\phi_{k,i} + \phi_{k-1,i}$. In the MPAS code the flux is equivalently written as
 
 $$
-(\Omega\phi)_{k,i} = \Omega_{k,i}\!\left\{\frac{1}{12}\bigl[7(\phi_{k,1} + \phi_{k-1,i}) - (\phi_{k+1,i} + \phi_{k-2,i})\bigr] + \mathrm{sign}(\Omega_{k,i})\,\frac{\beta}{12}\bigl[(\phi_{k+1,i} - \phi_{k-2,i}) - 3(\phi_{k,i} - \phi_{k-1,i})\bigr]\right\}.
+\begin{aligned}
+(\Omega\phi)_{k,i} = \Omega_{k,i}\!\biggl\{{}&\tfrac{1}{12}\bigl[7(\phi_{k,i} + \phi_{k-1,i}) - (\phi_{k+1,i} + \phi_{k-2,i})\bigr] \\
+&+ \mathrm{sign}(\Omega_{k,i})\,\tfrac{\beta}{12}\bigl[(\phi_{k+1,i} - \phi_{k-2,i}) - 3(\phi_{k,i} - \phi_{k-1,i})\bigr]\biggr\}.
+\end{aligned}
 $$ (eq:4.9)
 
-As with the horizontal fluxes, the parameter $\beta$ controls the level of upwinding, and hence damping, from this component of the transport. This form of the flux divergence originally appear in (Hundsdorfer et al. 1995) and was first implemented in the RK3 transport solver in Wicker and Skamarock (2002). It is also used in the WRF model (Skamarock et al. 2021b). In the referenced descriptions, the coefficient $\beta = 1$. For $\beta = 0$ the flux divergence is 4th-order accurate and neutral in the integration. $\beta > 0$ introduces damping in the flux divergence. In MPAS $\beta = 0.25$ is the default; see (Skamarock and Gassmann 2011) for details.
+As with the horizontal fluxes, the parameter $\beta$ controls the level of upwinding, and hence damping, from this component of the transport. This form of the flux divergence originally appeared in Hundsdorfer et al. (1995) and was first implemented in the RK3 transport solver in Wicker and Skamarock (2002). It is also used in the WRF model (Skamarock et al. 2021b). In the referenced descriptions, the coefficient $\beta = 1$. For $\beta = 0$ the flux divergence is 4th-order accurate and neutral in the integration. $\beta > 0$ introduces damping in the flux divergence. In MPAS $\beta = 0.25$ is the default; see (Skamarock and Gassmann 2011) for details.
 
 :::{admonition} MPAS code
 :class: note
@@ -137,7 +145,10 @@ MPAS uses a shape-preserving (monotonic) flux renormalization adapted from Zales
 (3) First-order upwind fluxes are used to update the solution. The upwind update is
 
 $$
-\tilde{\rho}^{t+\Delta t}_d\phi^{t*}_j = \tilde{\rho}^t_d\phi^{***}_j - \Delta t\!\left[\frac{1}{A_i}\sum_{n_{e_i}}L_{e_i}\mathbf{V}_{\mathbf{H},\mathbf{e_i}}\cdot\mathbf{n}\,\phi^{***}_{\mathrm{upwind}} + \frac{1}{\Delta\zeta_k}\bigl(\Omega_{k+1,i}\phi^{***}_{\mathrm{upwind}} - \Omega_{k,i}\phi^{***}_{\mathrm{upwind}}\bigr)\right]
+\begin{aligned}
+\tilde{\rho}^{t+\Delta t}_d\phi^{t*}_j = \tilde{\rho}^t_d\phi^{***}_j - \Delta t\!\biggl[{}&\frac{1}{A_i}\sum_{n_{e_i}}L_{e_i}\mathbf{V}_{\mathbf{H},\mathbf{e_i}}\cdot\mathbf{n}\,\phi^{***}_{\mathrm{upwind}} \\
+&+ \frac{1}{\Delta\zeta_k}\bigl(\Omega_{k+1,i}\phi^{***}_{\mathrm{upwind}} - \Omega_{k,i}\phi^{***}_{\mathrm{upwind}}\bigr)\biggr]
+\end{aligned}
 $$ (eq:4.10)
 
 (4) Perturbation fluxes are formed by subtracting the upwind fluxes from the full fluxes computed in step (1). For the upwind fluxes, $\phi_{\mathrm{upwind}}$ is the value from the cell upwind of the velocity on the cell face.
@@ -160,7 +171,7 @@ The shape-preserving (monotonic) transport scheme is contained in subroutine `at
 
 The horizontal momentum equation {eq}`eq:3.6` in MPAS is cast in vector-invariant form. In the derivation of this vector invariant form of the equation, beginning with the advective form of the horizontal momentum equation [using $u_t$ as opposed to $(\rho u)_t$], the horizontal transport of the horizontal velocity, $(-\mathbf{v}_{\mathbf{H}}\cdot\nabla_H\mathbf{v}_{\mathbf{H}})$, is recast as $-\eta\,\mathbf{k}\times\mathbf{v}_{\mathbf{H}} - \nabla_\zeta K$. Coupling the horizontal velocity with the dry-air density brings in the additional term $\mathbf{v}_{\mathbf{H}}\nabla_\zeta\cdot\mathbf{V}$. Also note that the vector-invariant form does not include the vertical transport term which still appears in {eq}`eq:3.6`.
 
-MPAS uses a C-grid staggering of the horizontal velocity, thus the prognostic velocity is defined in the cell edge and is normal to the cell edge as illustrated in Figure 2.1. In the follow sections we review the spatial discretization of the terms in the various forms of the horizontal momentum equation used in MPAS-A.
+MPAS uses a C-grid staggering of the horizontal velocity, thus the prognostic velocity is defined in the cell edge and is normal to the cell edge as illustrated in Figure 2.1. In the following sections we review the spatial discretization of the terms in the various forms of the horizontal momentum equation used in MPAS-A.
 
 ### 4.3.1 Pressure and Kinetic Energy
 
@@ -178,7 +189,10 @@ $$
 $$ (eq:4.12)
 
 $$
-\frac{\rho_d^t}{\rho_m^t}\bigl[\gamma R_d\pi^t\nabla_\zeta\overline{\Theta''_m}^\tau + g\,z_H\tilde{\rho}''_d\bigr] \;\to\; \left.\frac{\rho_d}{\rho_m}\right|_{c_e}\!\left[\gamma R_d\overline{\pi^t}^{c_e}\delta_{c_e}\!\left(\overline{\Theta''_m}^\tau\right) + g\,(\delta_{c_e}z)\,\overline{\tilde{\rho}_m''}^{c_e}\right].
+\begin{aligned}
+\frac{\rho_d^t}{\rho_m^t}\bigl[\gamma R_d\pi^t\nabla_\zeta\overline{\Theta''_m}^\tau + g\,z_H\tilde{\rho}''_d\bigr] \;\to\; {}&\left.\frac{\rho_d}{\rho_m}\right|_{c_e}\!\left[\gamma R_d\overline{\pi^t}^{c_e}\delta_{c_e}\!\left(\overline{\Theta''_m}^\tau\right)\right. \\
+&\left.\hphantom{\left.\tfrac{\rho_d}{\rho_m}\right|_{c_e}\!\bigl[\,} + g\,(\delta_{c_e}z)\,\overline{\tilde{\rho}_m''}^{c_e}\right].
+\end{aligned}
 $$ (eq:4.13)
 
 {eq}`eq:4.11` and {eq}`eq:4.12` are found in the RK3 integration {eq}`eq:3.15`, and {eq}`eq:4.13` is found in the acoustic integration {eq}`eq:3.25`. The gradient operator $\delta_{c_e}$ is defined as the difference across the edge $e$ of the cell-centered values from the two cells sharing the edge. Referring to Figure 2.1 and velocity $u_{13}$, where a positive value of $u_{13}$ indicates flow from cell $C$ to cell $A$, the gradient operator is
@@ -276,7 +290,7 @@ The weights $w_{e,e'}$ are computed as one of the final steps in the MPAS mesh g
 
 **Vertical Vorticity**
 
-The discrete vertical vorticity is evaluated at the vertices of the MPAS CVT mesh. Referring to Figure 2.1, the vertical vorticity at vertex $a$ is computed using the circulation theorum applied to the MPAS dual triangular mesh. The relative vertical vorticity at vertex $a$ is computed as
+The discrete vertical vorticity is evaluated at the vertices of the MPAS CVT mesh. Referring to Figure 2.1, the vertical vorticity at vertex $a$ is computed using the circulation theorem applied to the MPAS dual triangular mesh. The relative vertical vorticity at vertex $a$ is computed as
 
 $$
 \zeta_a = \frac{u_{13}|\overrightarrow{CA}|t_{13,a} + u_{14}|\overrightarrow{AB}|t_{14,a} + u_{15}|\overrightarrow{BC}|t_{15,a}}{A_a},
@@ -369,7 +383,7 @@ The discrete term {eq}`eq:4.28` is computed in subroutine `atm_compute_dyn_tend`
 
 **Pressure Gradient and Body Force Term**
 
-The vertical discretization of the acoustic perturbation equations is discussed in Appendix A. The RK3 integration requires evaluation of the pressure gradient, body force and transport terms, as given in {eq}`eq:3.31`, for the acoustic integration, and it's form is analogous to the perturbation terms in the acoustic-step discretization:
+The vertical discretization of the acoustic perturbation equations is discussed in Appendix A. The RK3 integration requires evaluation of the pressure gradient, body force and transport terms, as given in {eq}`eq:3.31`, for the acoustic integration, and its form is analogous to the perturbation terms in the acoustic-step discretization:
 
 $$
 \frac{\rho_d}{\rho_m}\!\left(\frac{\partial p'}{\partial\zeta} + g\,\tilde{\rho}'_m\right) \;\to\; \overline{\left(\frac{\rho_d^t}{\rho_m^t}\right)}^{k'}\!\left(\frac{p(k) - p(k-1)}{\Delta\zeta(k)} + g\,\overline{\tilde{\rho}'_m}^k\right).
@@ -391,7 +405,7 @@ The pressure gradient and body force terms {eq}`eq:4.29` are computed in subrout
 
 **Transport for the Vertical Velocity**
 
-The 3 dimension transport of the vertical velocity in {eq}`eq:3.31` requires evaluating the term $(\nabla\cdot\mathbf{V}w)_\zeta$, and this is accomplished in a manner similar to the transport of scalar variables described in section 4.2. The 3D flux divergence for scalars {eq}`eq:4.6` is modified to account for the staggered vertical velocity $w$ and mass flux $\Omega$:
+The 3D transport of the vertical velocity in {eq}`eq:3.31` requires evaluating the term $(\nabla\cdot\mathbf{V}w)_\zeta$, and this is accomplished in a manner similar to the transport of scalar variables described in section 4.2. The 3D flux divergence for scalars {eq}`eq:4.6` is modified to account for the staggered vertical velocity $w$ and mass flux $\Omega$:
 
 $$
 -(\nabla\cdot\mathbf{V}w)_\zeta \approx -\,\frac{1}{A_i}\sum_{n_{e_i}}\!\left[L_{e_i}\bigl(\overline{\mathbf{V}_{\mathbf{H},\mathbf{e_i}}\cdot\mathbf{n}}^k\,w_{e_i}\bigr)\right] + \frac{\overline{\Omega}^{k,i}\,\overline{w}^{k,i} - \overline{\Omega}^{k-1,i}\,\overline{w}^{k-1,i}}{\Delta\zeta_k}.

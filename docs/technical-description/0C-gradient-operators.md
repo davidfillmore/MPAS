@@ -4,7 +4,7 @@ Horizontal gradients on the MPAS mesh are needed in many places in MPAS, for exa
 
 ## C.1 Horizontal Derivatives
 
-Within the finite-volume formulation of MPAS, we define gradient operators as the cell-average of the gradient. Using Green's theorum,
+Within the finite-volume formulation of MPAS, we define gradient operators as the cell-average of the gradient. Using Green's theorem,
 
 $$
 \iint_R\left(\frac{\partial N}{\partial x} - \frac{\partial M}{\partial y}\right)dx\,dy = \oint_C(M\,dx + N\,dy),

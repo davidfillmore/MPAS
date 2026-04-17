@@ -84,7 +84,7 @@ $$
 u'(\lambda, \phi) = u_p\exp\!\left\{-\left(\frac{r}{R}\right)^{\!2}\right\},
 $$ (eq:8.4)
 
-where $(\lambda, \phi)$ are the longitude and latitude, $u_p = 1\ m/s$, $r$ is the great-circle arc distance on the sphere from the point $(\lambda_o, \phi_o) = (20E, 40N)$, and $R = a/10$ where $a$ is the earth radius. There is no vertical dependence to this perturbation.
+where $(\lambda, \phi)$ are the longitude and latitude, $u_p = 1\ \mathrm{m\,s^{-1}}$, $r$ is the great-circle arc distance on the sphere from the point $(\lambda_o, \phi_o) = (20^\circ\mathrm{E}, 40^\circ\mathrm{N})$, and $R = a/10$ where $a$ is the earth radius. There is no vertical dependence to this perturbation.
 
 See Skamarock et al. (2012) figure 7 for an example of an MPAS-Atmosphere result for this case.
 
@@ -94,9 +94,9 @@ $$
 u'(\lambda, \phi) = u_p\cos[k_x(\lambda - \lambda_o)]\,\sin^2 2\phi,
 $$ (eq:8.5)
 
-where $k_x = 9$ is the zonal wavenumber of the perturbation. There is no vertical dependence to this perturbation. Also, there is a not a published solution for this perturbation but the converged normal mode solution for wavenumber 9 solution is shown in Park et al. (2013).
+where $k_x = 9$ is the zonal wavenumber of the perturbation. There is no vertical dependence to this perturbation. Also, there is not a published solution for this perturbation, but the converged normal-mode solution for wavenumber 9 is shown in Park et al. (2013).
 
-The initialization integrates the hydrostatic balance equation {eq}`eq:8.2` from the surface upward to the lid, with a lower boundary condition of $p = 1000$ hPa. The is a gradual terrain slope from the equator top the pole to satisfy a zero zonal wind at the surface for the given analytic formula for the jet. This case uses the isothermal reference state {eq}`eq:8.1`.
+The initialization integrates the hydrostatic balance equation {eq}`eq:8.2` from the surface upward to the lid, with a lower boundary condition of $p = 1000$ hPa. There is a gradual terrain slope from the equator to the pole to satisfy a zero zonal wind at the surface for the given analytic formula for the jet. This case uses the isothermal reference state {eq}`eq:8.1`.
 
 :::{admonition} MPAS code
 :class: note
@@ -142,7 +142,7 @@ For the 2D squall-line simulation and the supercell simulation the environmental
 $$
 \begin{aligned}
 u(z) &= u_m\frac{z}{z_{ts}} - u_s \qquad \text{for } z \le z_{ts} \\
-&= u_m - u_s, \qquad \text{for } z > z_{tr}
+&= u_m - u_s, \qquad \text{for } z > z_{ts}
 \end{aligned}
 $$
 
@@ -170,7 +170,7 @@ $$
 N^2 = \frac{g}{\theta}\frac{\partial\theta}{\partial z}.
 $$
 
-In the existing initialization code the value for this case is $N^2 = 10^{-4}\ s^{-2}$.
+In the existing initialization code the value for this case is $N^2 = 10^{-4}\ \mathrm{s}^{-2}$.
 
 The surface terrain profile is that described in Schär et al. (2002) and Klemp et al. (2003), and is given by
 
@@ -194,7 +194,7 @@ The initialization for a real-data full-earth-atmosphere case is much more compl
 
 ### 8.3.1 Initialization of the 3D State
 
-Here we only discuss the initialization of the atmospheric state on the MPAS mesh. The specification of that mesh is described in Chapter 2. The reference state used in the initialization is the analytic isothermal state given by {eq}`eq:8.1`. The hydrostatic balance uses the perturbation state balance {eq}`eq:8.2`. The surface pressure, and the potential temperature and water vapor mixing ratio in the column, are interpolated to the MPAS-Atmosphere mesh from the analysis. The lowest model level is interpolated from the analysis, and the lowest model level density is computed from the state equation. For each layer above the first layer, the hydrostatic relation {eq}`eq:8.2` along with the state equation are evaluated iteratively until the densities and pressures satisfy both the state equation and hydrostatic relation within a certain tolerance which in the current release requires the the change in pressure in each iteration be less than 0.0001 Pa or that the iteration count is less than 30.
+Here we only discuss the initialization of the atmospheric state on the MPAS mesh. The specification of that mesh is described in Chapter 2. The reference state used in the initialization is the analytic isothermal state given by {eq}`eq:8.1`. The hydrostatic balance uses the perturbation state balance {eq}`eq:8.2`. The surface pressure, and the potential temperature and water vapor mixing ratio in the column, are interpolated to the MPAS-Atmosphere mesh from the analysis. The lowest model level is interpolated from the analysis, and the lowest model level density is computed from the state equation. For each layer above the first layer, the hydrostatic relation {eq}`eq:8.2` along with the state equation are evaluated iteratively until the densities and pressures satisfy both the state equation and hydrostatic relation within a certain tolerance which in the current release requires the change in pressure in each iteration be less than 0.0001 Pa or that the iteration count is less than 30.
 
 :::{admonition} MPAS code
 :class: note

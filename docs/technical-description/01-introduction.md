@@ -30,7 +30,7 @@ In future MPAS-Atmosphere releases we will include comments in the MPAS source c
 
 ## 1.3 MPAS-Atmosphere Code Overview
 
-MPAS-Atmosphere is comprised of two main executables than can be built from the system contained in the MPAS-A Github repository, and these executables are called *cores* in the MPAS system. The *init_atmosphere* core is responsible for producing atmospheric states that the *atmosphere* core can use as an initial state that it integrates forward in time.
+MPAS-Atmosphere is comprised of two main executables that can be built from the system contained in the MPAS-A Github repository, and these executables are called *cores* in the MPAS system. The *init_atmosphere* core is responsible for producing atmospheric states that the *atmosphere* core can use as an initial state that it integrates forward in time.
 
 ### 1.3.1 The init_atmosphere core
 
