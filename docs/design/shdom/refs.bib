@@ -1,0 +1,350 @@
+%% References for the SHDOM-MPAS coupling paper.
+%%
+%% Organization (in citation order within the draft):
+%%   1. SHDOM and three-dimensional radiative transfer
+%%   2. MPAS and unstructured-mesh atmospheric modelling
+%%   3. RRTMG, correlated-k, and the MCICA column treatment
+%%   4. 3D-RT integration efforts in other ESMs / LES
+%%   5. Mesh remapping and coupling frameworks
+%%   6. Graph partitioning and parallel infrastructure
+%%   7. Cloud 3D-RT effects, field campaigns, and textbooks
+%%
+%% Entries flagged with "TODO:" need a detail (page range, exact author list,
+%% or DOI) verified against the source before submission.
+
+
+%% -----------------------------------------------------------------
+%% 1. SHDOM and three-dimensional radiative transfer
+%% -----------------------------------------------------------------
+
+@article{evans1998shdom,
+  author  = {Evans, K. F.},
+  title   = {The spherical harmonic discrete ordinate method for three-dimensional atmospheric radiative transfer},
+  journal = {Journal of the Atmospheric Sciences},
+  volume  = {55},
+  number  = {3},
+  pages   = {429--446},
+  year    = {1998},
+  doi     = {10.1175/1520-0469(1998)055<0429:TSHDOM>2.0.CO;2}
+}
+
+@book{marshak2005,
+  author    = {Marshak, A. and Davis, A. B.},
+  title     = {3{D} radiative transfer in cloudy atmospheres},
+  publisher = {Springer},
+  address   = {Berlin, Heidelberg},
+  year      = {2005},
+  doi       = {10.1007/3-540-28519-9}
+}
+
+@article{henyey1941,
+  author  = {Henyey, L. G. and Greenstein, J. L.},
+  title   = {Diffuse radiation in the galaxy},
+  journal = {Astrophysical Journal},
+  volume  = {93},
+  pages   = {70--83},
+  year    = {1941},
+  doi     = {10.1086/144246}
+}
+
+
+%% -----------------------------------------------------------------
+%% 2. MPAS and unstructured-mesh atmospheric modelling
+%% -----------------------------------------------------------------
+
+@article{skamarock2012mpas,
+  author  = {Skamarock, W. C. and Klemp, J. B. and Duda, M. G. and Fowler, L. D. and Park, S.-H. and Ringler, T. D.},
+  title   = {A multiscale nonhydrostatic atmospheric model using centroidal {V}oronoi tesselations and {C}-grid staggering},
+  journal = {Monthly Weather Review},
+  volume  = {140},
+  number  = {9},
+  pages   = {3090--3105},
+  year    = {2012},
+  doi     = {10.1175/MWR-D-11-00215.1}
+}
+
+@article{thuburn2009cgrid,
+  author  = {Thuburn, J. and Ringler, T. D. and Skamarock, W. C. and Klemp, J. B.},
+  title   = {Numerical representation of geostrophic modes on arbitrarily structured {C}-grids},
+  journal = {Journal of Computational Physics},
+  volume  = {228},
+  number  = {22},
+  pages   = {8321--8335},
+  year    = {2009},
+  doi     = {10.1016/j.jcp.2009.08.006}
+}
+
+@article{ringler2010unified,
+  author  = {Ringler, T. D. and Thuburn, J. and Klemp, J. B. and Skamarock, W. C.},
+  title   = {A unified approach to energy conservation and potential vorticity dynamics for arbitrarily-structured {C}-grids},
+  journal = {Journal of Computational Physics},
+  volume  = {229},
+  number  = {9},
+  pages   = {3065--3090},
+  year    = {2010},
+  doi     = {10.1016/j.jcp.2009.12.007}
+}
+
+@article{ringler2011multiresolution,
+  author  = {Ringler, T. D. and Jacobsen, D. and Gunzburger, M. and Ju, L. and Duda, M. and Skamarock, W.},
+  title   = {Exploring a multiresolution modeling approach within the shallow-water equations},
+  journal = {Monthly Weather Review},
+  volume  = {139},
+  number  = {11},
+  pages   = {3348--3368},
+  year    = {2011},
+  doi     = {10.1175/MWR-D-10-05049.1}
+}
+
+
+%% -----------------------------------------------------------------
+%% 3. RRTMG, correlated-k, and MCICA
+%% -----------------------------------------------------------------
+
+@article{mlawer1997rrtm,
+  author  = {Mlawer, E. J. and Taubman, S. J. and Brown, P. D. and Iacono, M. J. and Clough, S. A.},
+  title   = {Radiative transfer for inhomogeneous atmospheres: {RRTM}, a validated correlated-k model for the longwave},
+  journal = {Journal of Geophysical Research},
+  volume  = {102},
+  number  = {D14},
+  pages   = {16663--16682},
+  year    = {1997},
+  doi     = {10.1029/97JD00237}
+}
+
+@article{iacono2008rrtmg,
+  author  = {Iacono, M. J. and Delamere, J. S. and Mlawer, E. J. and Shephard, M. W. and Clough, S. A. and Collins, W. D.},
+  title   = {Radiative forcing by long-lived greenhouse gases: calculations with the {AER} radiative transfer models},
+  journal = {Journal of Geophysical Research: Atmospheres},
+  volume  = {113},
+  number  = {D13},
+  pages   = {D13103},
+  year    = {2008},
+  doi     = {10.1029/2008JD009944}
+}
+
+@article{pincus2003mcica,
+  author  = {Pincus, R. and Barker, H. W. and Morcrette, J.-J.},
+  title   = {A fast, flexible, approximate technique for computing radiative transfer in inhomogeneous cloud fields},
+  journal = {Journal of Geophysical Research},
+  volume  = {108},
+  number  = {D13},
+  pages   = {4376},
+  year    = {2003},
+  doi     = {10.1029/2002JD003322}
+}
+
+@article{barker2003monte,
+  author  = {Barker, H. W. and Stephens, G. L. and Partain, P. T. and Bergman, J. W. and Bonnel, B. and Campana, K. and Clothiaux, E. E. and Clough, S. and Cusack, S. and Delamere, J. and others},
+  title   = {Assessing {1D} atmospheric solar radiative transfer models: interpretation and handling of unresolved clouds},
+  journal = {Journal of Climate},
+  volume  = {16},
+  number  = {16},
+  pages   = {2676--2699},
+  year    = {2003},
+  doi     = {10.1175/1520-0442(2003)016<2676:ADASRT>2.0.CO;2}
+}
+
+
+%% -----------------------------------------------------------------
+%% 4. 3D-RT integration efforts in other ESMs / LES
+%% -----------------------------------------------------------------
+
+@article{jakub2015tenstream,
+  author  = {Jakub, F. and Mayer, B.},
+  title   = {A three-dimensional parallel radiative transfer model for atmospheric heating rates for use in cloud resolving models -- the {TenStream} solver},
+  journal = {Journal of Quantitative Spectroscopy and Radiative Transfer},
+  volume  = {163},
+  pages   = {63--71},
+  year    = {2015},
+  doi     = {10.1016/j.jqsrt.2015.05.003}
+}
+
+@article{jakub2016tenstream_les,
+  author  = {Jakub, F. and Mayer, B.},
+  title   = {{3-D} radiative transfer in large-eddy simulations -- experiences coupling the {TenStream} solver to the {UCLA-LES}},
+  journal = {Geoscientific Model Development},
+  volume  = {9},
+  number  = {4},
+  pages   = {1413--1422},
+  year    = {2016},
+  doi     = {10.5194/gmd-9-1413-2016}
+}
+
+@article{mayer2009mystic,
+  author  = {Mayer, B.},
+  title   = {Radiative transfer in the cloudy atmosphere},
+  journal = {European Physical Journal Conferences},
+  volume  = {1},
+  pages   = {75--99},
+  year    = {2009},
+  doi     = {10.1140/epjconf/e2009-00912-1}
+}
+
+@article{hogan2016spartacus,
+  author  = {Hogan, R. J. and Sch{\"a}fer, S. A. K. and Klinger, C. and Chiu, J. C. and Mayer, B.},
+  title   = {Representing {3-D} cloud radiation effects in two-stream schemes: 2. {M}atrix formulation and broadband evaluation},
+  journal = {Journal of Geophysical Research: Atmospheres},
+  volume  = {121},
+  number  = {14},
+  pages   = {8583--8599},
+  year    = {2016},
+  doi     = {10.1002/2016JD024875}
+}
+
+
+%% -----------------------------------------------------------------
+%% 5. Mesh remapping and coupling frameworks
+%% -----------------------------------------------------------------
+
+@article{jones1999scrip,
+  author  = {Jones, P. W.},
+  title   = {First- and second-order conservative remapping schemes for grids in spherical coordinates},
+  journal = {Monthly Weather Review},
+  volume  = {127},
+  number  = {9},
+  pages   = {2204--2210},
+  year    = {1999},
+  doi     = {10.1175/1520-0493(1999)127<2204:FASOCR>2.0.CO;2}
+}
+
+@article{hill2004esmf,
+  author  = {Hill, C. and DeLuca, C. and Balaji, V. and Suarez, M. and da~Silva, A.},
+  title   = {The architecture of the {Earth} {System} {Modeling} {Framework}},
+  journal = {Computing in Science \& Engineering},
+  volume  = {6},
+  number  = {1},
+  pages   = {18--28},
+  year    = {2004},
+  doi     = {10.1109/MCISE.2004.1255817}
+}
+
+% TODO(hanke2016yac): verify exact title string against the GMD record.
+@article{hanke2016yac,
+  author  = {Hanke, M. and Redler, R. and Holfeld, T. and B{\"o}ttinger, M.},
+  title   = {Challenges of {GCM} coupling via exchange grids: {YAC} 1.2.0 for next-generation {Earth} system modelling},
+  journal = {Geoscientific Model Development},
+  volume  = {9},
+  number  = {8},
+  pages   = {2755--2769},
+  year    = {2016},
+  doi     = {10.5194/gmd-9-2755-2016}
+}
+
+@article{valcke2013oasis,
+  author  = {Valcke, S.},
+  title   = {The {OASIS3} coupler: a {European} climate modelling community software},
+  journal = {Geoscientific Model Development},
+  volume  = {6},
+  number  = {2},
+  pages   = {373--388},
+  year    = {2013},
+  doi     = {10.5194/gmd-6-373-2013}
+}
+
+
+@article{stenholm1991lambda,
+  author  = {Stenholm, L. G. and Storzer, H. and Wehrse, R.},
+  title   = {An efficient method for the solution of {3-D} radiative transfer problems},
+  journal = {Journal of Quantitative Spectroscopy and Radiative Transfer},
+  volume  = {45},
+  number  = {1},
+  pages   = {47--56},
+  year    = {1991},
+  doi     = {10.1016/0022-4073(91)90080-9}
+}
+
+@article{wiscombe1977deltam,
+  author  = {Wiscombe, W. J.},
+  title   = {The delta-{M} method: rapid yet accurate radiative flux calculations for strongly asymmetric phase functions},
+  journal = {Journal of the Atmospheric Sciences},
+  volume  = {34},
+  number  = {9},
+  pages   = {1408--1422},
+  year    = {1977},
+  doi     = {10.1175/1520-0469(1977)034<1408:TDMRYA>2.0.CO;2}
+}
+
+@article{nakajima1988tms,
+  author  = {Nakajima, T. and Tanaka, M.},
+  title   = {Algorithms for radiative intensity calculations in moderately thick atmospheres using a truncation approximation},
+  journal = {Journal of Quantitative Spectroscopy and Radiative Transfer},
+  volume  = {40},
+  number  = {1},
+  pages   = {51--69},
+  year    = {1988},
+  doi     = {10.1016/0022-4073(88)90031-3}
+}
+
+@book{golub2013matrix,
+  author    = {Golub, G. H. and Van Loan, C. F.},
+  title     = {Matrix Computations},
+  edition   = {4th},
+  publisher = {Johns Hopkins University Press},
+  address   = {Baltimore, Maryland},
+  year      = {2013}
+}
+
+
+%% -----------------------------------------------------------------
+%% 6. Graph partitioning and parallel infrastructure
+%% -----------------------------------------------------------------
+
+@article{karypis1998metis,
+  author  = {Karypis, G. and Kumar, V.},
+  title   = {A fast and high quality multilevel scheme for partitioning irregular graphs},
+  journal = {SIAM Journal on Scientific Computing},
+  volume  = {20},
+  number  = {1},
+  pages   = {359--392},
+  year    = {1998},
+  doi     = {10.1137/S1064827595287997}
+}
+
+
+%% -----------------------------------------------------------------
+%% 7. Cloud 3D-RT effects, field campaigns, textbooks
+%% -----------------------------------------------------------------
+
+@article{varnai1999effects,
+  author  = {V{\'a}rnai, T. and Davies, R.},
+  title   = {Effects of cloud heterogeneities on shortwave radiation: comparison of cloud-top variability and internal heterogeneity},
+  journal = {Journal of the Atmospheric Sciences},
+  volume  = {56},
+  number  = {24},
+  pages   = {4206--4224},
+  year    = {1999},
+  doi     = {10.1175/1520-0469(1999)056<4206:EOCHOS>2.0.CO;2}
+}
+
+@article{barker1996gamma,
+  author  = {Barker, H. W.},
+  title   = {A parameterization for computing grid-averaged solar fluxes for inhomogeneous marine boundary layer clouds. {Part} {I}: methodology and homogeneous biases},
+  journal = {Journal of the Atmospheric Sciences},
+  volume  = {53},
+  number  = {16},
+  pages   = {2289--2303},
+  year    = {1996},
+  doi     = {10.1175/1520-0469(1996)053<2289:APFCGA>2.0.CO;2}
+}
+
+% TODO(barth2015dc3): verify author list against the BAMS record before submission.
+@article{barth2015dc3,
+  author  = {Barth, M. C. and Cantrell, C. A. and Brune, W. H. and Rutledge, S. A. and Crawford, J. H. and Huntrieser, H. and Carey, L. D. and MacGorman, D. and Weisman, M. and Pickering, K. E. and others},
+  title   = {The {Deep} {Convective} {Clouds} and {Chemistry} ({DC3}) field campaign},
+  journal = {Bulletin of the American Meteorological Society},
+  volume  = {96},
+  number  = {8},
+  pages   = {1281--1309},
+  year    = {2015},
+  doi     = {10.1175/BAMS-D-13-00290.1}
+}
+
+@book{petty2006,
+  author    = {Petty, G. W.},
+  title     = {A first course in atmospheric radiation},
+  edition   = {2nd},
+  publisher = {Sundog Publishing},
+  address   = {Madison, Wisconsin},
+  year      = {2006}
+}
