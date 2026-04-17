@@ -140,6 +140,46 @@ This appendix summarizes the complete set of namelist options available when run
 | Description | Formulation of horizontal mixing |
 | Possible Values | `'2d_fixed'` or `'2d_smagorinsky'` *(default: 2d_smagorinsky)* |
 
+### `config_les_model` (character)
+
+| | |
+|---|---|
+| Units | - |
+| Description | LES dissipation model. When set to anything other than `'none'`, activates the `les` package and turns on the prognostic TKE scalar. |
+| Possible Values | `'none'`, `'3d_smagorinsky'`, or `'prognostic_1.5_order'` *(default: none)* |
+
+### `config_les_surface` (character)
+
+| | |
+|---|---|
+| Units | - |
+| Description | LES surface flux option. Selects how surface fluxes of heat, moisture, and momentum are supplied to the LES model. |
+| Possible Values | `'specified'` or `'varying'` *(default: none)* |
+
+### `config_surface_heat_flux` (real)
+
+| | |
+|---|---|
+| Units | K m s<sup>-1</sup> |
+| Description | Specified surface kinematic heat flux w'theta', used when `config_les_surface = 'specified'`. |
+| Possible Values | Any real value *(default: 0.0)* |
+
+### `config_surface_moisture_flux` (real)
+
+| | |
+|---|---|
+| Units | kg m s<sup>-1</sup> |
+| Description | Specified surface kinematic moisture flux w'q', used when `config_les_surface = 'specified'`. |
+| Possible Values | Any real value *(default: 0.0)* |
+
+### `config_surface_drag_coefficient` (real)
+
+| | |
+|---|---|
+| Units | - |
+| Description | 10 m drag coefficient C<sub>d</sub>, used in the LES surface flux parameterization. |
+| Possible Values | Any real value *(default: 0.0)* |
+
 ### `config_len_disp` (real)
 
 | | |
@@ -152,9 +192,17 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | - |
-| Description | Scaling coefficient of dx^3 to obtain biharmonic diffusion coefficient |
+| Units | m s<sup>-1</sup> |
+| Description | Coefficient multiplied by dx^3 to obtain biharmonic physical hyperviscosity |
 | Possible Values | Non-negative real values *(default: 0.05)* |
+
+### `config_mix_scalars` (logical)
+
+| | |
+|---|---|
+| Units | - |
+| Description | Whether to enable horizontal and vertical mixing for scalar fields |
+| Possible Values | .true. or .false. *(default: false)* |
 
 ### `config_del4u_div_factor` (real)
 
@@ -273,8 +321,8 @@ This appendix summarizes the complete set of namelist options available when run
 | | |
 |---|---|
 | Units | - |
-| Description | Off-centering parameter for the vertically implicit acoustic integration |
-| Possible Values | Positive real values *(default: 0.1)* |
+| Description | Height-constant off-centering parameter for the vertically implicit acoustic integration. Retained for backward compatibility; new simulations should use the height-varying `config_epssm_minimum`, `config_epssm_maximum`, `config_epssm_transition_bottom_z`, and `config_epssm_transition_top_z` options in the `&damping` record (Section B.2). *(hidden by default)* |
+| Possible Values | Positive real values *(default: 0.0)* |
 
 ### `config_smdiv` (real)
 
@@ -330,7 +378,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | - |
+| Units | s<sup>-1</sup> |
 | Description | Maximum w-damping coefficient at model top |
 | Possible Values | 0 <= config_xnutr <= 1 *(default: 0.2)* |
 
@@ -338,7 +386,7 @@ This appendix summarizes the complete set of namelist options available when run
 
 | | |
 |---|---|
-| Units | - |
+| Units | m s<sup>-1</sup> |
 | Description | Coefficient for scaling the 2nd-order horizontal mixing in the mpas_cam absorbing layer *(hidden by default)* |
 | Possible Values | 0 <= config_mpas_cam_coef <= 1, standard value is 0.2 *(default: 0.0)* |
 
@@ -373,6 +421,38 @@ This appendix summarizes the complete set of namelist options available when run
 | Units | - |
 | Description | Number of layers in which to apply Rayleigh damping on horizontal velocity at top of model; damping linearly ramps to zero by layer number from the top *(hidden by default)* |
 | Possible Values | Positive integer values *(default: 6)* |
+
+### `config_epssm_minimum` (real)
+
+| | |
+|---|---|
+| Units | - |
+| Description | Value of the acoustic off-centering parameter below the transition zone (i.e., at heights below `config_epssm_transition_bottom_z`). |
+| Possible Values | Positive real values between 0 and 1 *(default: 0.1)* |
+
+### `config_epssm_maximum` (real)
+
+| | |
+|---|---|
+| Units | - |
+| Description | Value of the acoustic off-centering parameter above the transition zone (i.e., at heights above `config_epssm_transition_top_z`). |
+| Possible Values | Positive real values between 0 and 1 *(default: 0.5)* |
+
+### `config_epssm_transition_bottom_z` (real)
+
+| | |
+|---|---|
+| Units | m |
+| Description | Height MSL of the bottom of the transition zone over which the acoustic off-centering parameter ramps from `config_epssm_minimum` to `config_epssm_maximum`. |
+| Possible Values | Positive real values *(default: 30000.0)* |
+
+### `config_epssm_transition_top_z` (real)
+
+| | |
+|---|---|
+| Units | m |
+| Description | Height MSL of the top of the transition zone over which the acoustic off-centering parameter ramps from `config_epssm_minimum` to `config_epssm_maximum`. |
+| Possible Values | Positive real values *(default: 50000.0)* |
 
 ## B.3 limited_area
 
@@ -443,6 +523,14 @@ This appendix summarizes the complete set of namelist options available when run
 | Units | - |
 | Description | Prefix of block mapping file *(hidden by default)* |
 | Possible Values | Any valid filename *(default: graph.info.part.)* |
+
+### `config_gpu_aware_mpi` (logical)
+
+| | |
+|---|---|
+| Units | - |
+| Description | Whether to use GPU-aware MPI for halo exchanges. Only effective when `config_halo_exch_method = 'mpas_halo'`. *(hidden by default)* |
+| Possible Values | .true. or .false. *(default: false)* |
 
 ## B.6 restart
 
@@ -671,6 +759,14 @@ This appendix summarizes the complete set of namelist options available when run
 | Units | - |
 | Description | Number of microphysics time-steps per physics time-steps *(hidden by default)* |
 | Possible Values | Positive integers *(default: 1)* |
+
+### `config_microphysics_top` (real)
+
+| | |
+|---|---|
+| Units | m |
+| Description | Altitude above which microphysics tendencies are zeroed out. Microphysics processes are disabled for model levels whose mid-layer height exceeds this value. *(hidden by default)* |
+| Possible Values | Positive real values *(default: 45000.0)* |
 
 ### `config_radtlw_interval` (character)
 
@@ -1251,3 +1347,15 @@ This appendix summarizes the complete set of namelist options available when run
 | Units | - |
 | Description | Option for drainage option |
 | Possible Values | 0 or 1 *(default: 0)* |
+
+## B.14 musica
+
+This namelist record is present only when MPAS-Atmosphere is built with `USE_MUSICA=true` (see [Chapter 3](03-building.md)). It is not available in default builds.
+
+### `config_micm_file` (character)
+
+| | |
+|---|---|
+| Units | - |
+| Description | Path to the MICM (Model-Independent Chemistry Module) configuration file used by the MUSICA chemistry driver. |
+| Possible Values | Any valid filename *(default: empty string)* |

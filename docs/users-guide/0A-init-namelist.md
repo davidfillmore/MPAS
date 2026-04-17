@@ -308,6 +308,22 @@ Date-time strings throughout all MPAS namelists assume a common format. Specific
 | Description | Whether to blend terrain along domain boundaries with first-guess terrain. Only useful for limited-area domains. |
 | Possible Values | true or false *(default: false)* |
 
+### `config_hybrid_coordinate` (logical)
+
+| | |
+|---|---|
+| Units | - |
+| Description | Whether to use a hybrid sigma-pressure vertical coordinate. When true, the coordinate surfaces transition from terrain-following at the surface to purely pressure-based at the top of the hybrid transition zone specified by `config_hybrid_top_z`. |
+| Possible Values | true or false *(default: true)* |
+
+### `config_hybrid_top_z` (real)
+
+| | |
+|---|---|
+| Units | m |
+| Description | Height MSL at which the hybrid sigma-pressure coordinate surfaces become flat (purely pressure-based). Only used when `config_hybrid_coordinate = true`. |
+| Possible Values | Positive real values *(default: 30000.0)* |
+
 ## A.5 interpolation_control
 
 ### `config_extrap_airtemp` (character)

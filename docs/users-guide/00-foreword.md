@@ -1,14 +1,14 @@
 # MPAS-Atmosphere Model User's Guide
 
-**Version 8.3.0**
+**Version 8.4.0**
 
-Last updated: 2 June 2025
+Last updated: 16 April 2026
 
 ---
 
 ## Foreword
 
-This user's guide describes the Model for Prediction Across Scales -- Atmosphere (MPAS-A) Version 8.3.0. MPAS-A is the non-hydrostatic atmosphere model built within the MPAS framework. Users guides for other MPAS components, such as MPAS-Ocean, are separate from this guide.
+This user's guide describes the Model for Prediction Across Scales -- Atmosphere (MPAS-A) Version 8.4.0. MPAS-A is the non-hydrostatic atmosphere model built within the MPAS framework. Users guides for other MPAS components, such as MPAS-Ocean, are separate from this guide.
 
 The component models and framework that comprise MPAS are being developed collaboratively between Los Alamos National Laboratory (LANL) and the U.S. National Science Foundation National Center for Atmospheric Research (NSF NCAR). Common functionality required by different MPAS component models, such as parallel input/output, time management, block decomposition, etc., is provided by the MPAS framework, while development of specific component models, referred to in MPAS as *cores*, is handled by the individual development groups. Currently, LANL is responsible for the ocean, land-ice, and sea-ice cores, while NSF NCAR is responsible for the atmospheric core, MPAS-A.
 

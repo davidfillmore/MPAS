@@ -107,6 +107,9 @@ Available Options:
     OPENMP=true      - builds and links with OpenMP flags. Default is to not use OpenMP.
     USE_PIO2=true    - links with the PIO 2 library. Default is to use the PIO 1.x library.
     PRECISION=single - builds with default single-precision real kind. Default is double-precision.
+    MPAS_ESMF=embedded | external - select the ESMF timekeeping library (see below). Default is embedded.
+    USE_MUSICA=true  - builds with the MUSICA/MICM chemistry driver compiled in.
+                       Default is off.
 
 ************ ERROR ************
 No CORE specified. Quitting.
@@ -122,6 +125,35 @@ make gfortran CORE=atmosphere PRECISION=single
 ```
 
 Regardless of which precision the MPAS-Atmosphere `init_atmosphere` and `atmosphere` cores were compiled with, either single- or double-precision input files may be used. In general, the MPAS infrastructure should correctly detect the precision of input files, but one may also explicitly specify the precision of files in an input stream by adding the `precision` attribute to the stream definition as described in [Section 5.2](05-configuring-io.md#52-optional-stream-attributes).
+
+## 3.4a Selecting the ESMF Timekeeping Library
+
+MPAS uses the ESMF timekeeping library for all calendar and time-interval arithmetic. By default, MPAS builds with the *embedded* ESMF subset distributed in the `src/external/esmf_time_f90/` directory of the source tree, so no external ESMF installation is required.
+
+Beginning with version 8.4.0, MPAS can alternatively be linked against an externally built ESMF installation by setting `MPAS_ESMF=external` on the `make` command line. In that case, the `ESMFMKFILE` environment variable must be set to the full path of the `esmf.mk` file produced by the external ESMF build:
+
+```
+export ESMFMKFILE=/path/to/esmf/lib/libO/Linux.gfortran.64.openmpi.default/esmf.mk
+make gfortran CORE=atmosphere MPAS_ESMF=external
+```
+
+The default setting `MPAS_ESMF=embedded` is appropriate for the large majority of users and is recommended unless an external ESMF build is needed for consistency with other coupled-modeling infrastructure. Omitting `MPAS_ESMF` on the `make` command line is equivalent to `MPAS_ESMF=embedded`.
+
+## 3.4b Building with the MUSICA/MICM Chemistry Driver
+
+Beginning with version 8.4.0, the MPAS-Atmosphere build system supports optional compilation of the MUSICA-based MICM (Model-Independent Chemistry Module) chemistry driver. To enable this capability, add `USE_MUSICA=true` to the `make` command line:
+
+```
+make gfortran CORE=atmosphere USE_MUSICA=true
+```
+
+When `USE_MUSICA=true` is specified, the `&musica` namelist record becomes available at run time, including the `config_micm_file` option documented in [Appendix B.14](0B-model-namelist.md#musica). Default builds without `USE_MUSICA=true` do not include the MUSICA/MICM driver and do not recognize the `&musica` record.
+
+## 3.4c Physics Externals under the CMake Build Path
+
+MPAS-Atmosphere's optional CMake build path relies on several physics packages that are distributed as separate Git repositories and pulled in at configure time, rather than being kept in tree. The manifest `src/core_atmosphere/Externals.cfg` lists these externals along with the tag or branch to be checked out for each; the `checkout_externals` utility at `src/core_atmosphere/tools/manage_externals/checkout_externals` reads this manifest and populates the appropriate source directories.
+
+Under the CMake build path this step is handled automatically: CMake invokes `checkout_externals` during the configure step with the pinned tags from `Externals.cfg`, so no manual step is required. If the legacy GNU Make build path is used, the physics externals are not needed and the `checkout_externals` utility does not run.
 
 ## 3.5 Cleaning
 

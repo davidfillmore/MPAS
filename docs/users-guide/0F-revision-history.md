@@ -1,5 +1,20 @@
 # Appendix F: Revision History
 
+### 16 April 2026
+
+- Add new namelist options and fields for MPAS v8.4.0.
+  - New LES capability: `config_les_model`, `config_les_surface`, `config_surface_heat_flux`, `config_surface_moisture_flux`, `config_surface_drag_coefficient`, and `config_mix_scalars` in the `&nhyd_model` record; new `les` package gating the `tke` constituent of `scalars`.
+  - Height-varying off-centering parameter for the vertically implicit acoustic integration: `config_epssm_minimum`, `config_epssm_maximum`, `config_epssm_transition_bottom_z`, and `config_epssm_transition_top_z` in the `&damping` record. The existing `config_epssm` is hidden by default and retained only for backward compatibility.
+  - GPU-aware halo exchanges: `config_gpu_aware_mpi` in the `&decomposition` record (active only when `config_halo_exch_method='mpas_halo'`).
+  - Microphysics tendency cap: `config_microphysics_top` in the `&physics` record.
+  - Hybrid vertical coordinate now the default in `init_atmosphere`: `config_hybrid_coordinate` and `config_hybrid_top_z` in the `&vertical_grid` record of `namelist.init_atmosphere`.
+  - Conditional MUSICA/MICM namelist record and `config_micm_file` option (only when built with `USE_MUSICA=true`).
+- Corrected units for several existing options: `config_visc4_2dsmag` (m s<sup>-1</sup>), `config_xnutr` (s<sup>-1</sup>), and `config_mpas_cam_coef` (m s<sup>-1</sup>). Corrected field units: `dusfcg`, `dvsfcg` (Pa); `dtaux3d`, `dtauy3d` (m s<sup>-2</sup>).
+- Renamed / restructured deformation-coefficient fields: `defc_a` and `defc_b` have been replaced by the set `deformation_coef_c2`, `deformation_coef_s2`, `deformation_coef_cs`, `deformation_coef_c`, `deformation_coef_s`. These are now computed at model startup rather than read from the input file.
+- Split the former `kdiff` field into `eddy_visc_vert` and `eddy_visc_horz`. New LES diagnostics: `prandtl_3d_inv`, `bn2`.
+- Ertel potential-vorticity diagnostics (`ertel_pv`, `u_pv`, `v_pv`, `theta_pv`, `vort_pv`, `iLev_DT`, and the associated `depv_dt_*` and `dtheta_dt_mp` fields) have been removed from the default `output` stream. They remain available for opt-in via a user-defined output stream.
+- New build-system options documented in Chapter 3: `MPAS_ESMF` (with an `external` value that uses an `ESMFMKFILE`-specified ESMF installation), `USE_MUSICA`, and the `checkout_externals` utility for populating physics submodules in the CMake build path. Added `-fimplicit-none` to the GNU Fortran default compile flags.
+
 ### 2 June 2025
 
 - Add new namelist options and fields for MPAS v8.3.0.
