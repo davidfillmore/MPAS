@@ -1,5 +1,5 @@
-MPAS-Model
-==========
+MPAS
+====
 
 The Model for Prediction Across Scales (MPAS) is a collaborative project for
 developing atmosphere, ocean, and other earth-system simulation components for
@@ -19,6 +19,6 @@ developers can leverage pre-existing code and focus more on development of
    :titlesonly:
 
    users-guide/index
-   ocean/index
+   technical-description/index
 
 
