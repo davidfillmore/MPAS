@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# MPAS-Model documentation build configuration file, created by
+# MPAS documentation build configuration file, created by
 # sphinx-quickstart on Sat Mar 25 14:39:11 2017.
 #
 # This file is execfile()d with the current directory set to its
@@ -52,7 +52,7 @@ source_suffix = ['.rst', '.md']
 master_doc = 'index'
 
 # General information about the project.
-project = u'MPAS-Model'
+project = u'MPAS'
 copyright = u'Copyright (c) 2013-2020,  Los Alamos National Security, LLC (LANS) (Ocean: LA-CC-13-047;' \
             u'Land Ice: LA-CC-13-117) and the University Corporation for Atmospheric Research (UCAR).'
 author = u'Xylar Asay-Davis, Doug Jacobsen, Michael Duda, Mark Petersen, ' \
@@ -147,7 +147,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'mpas_model.tex', u'MPAS-Model Documentation',
+    (master_doc, 'mpas_model.tex', u'MPAS Documentation',
      author, 'manual'),
 ]
 
@@ -157,7 +157,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'mpas_model', u'MPAS-Model Documentation',
+    (master_doc, 'mpas_model', u'MPAS Documentation',
      [author], 1)
 ]
 
@@ -168,8 +168,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'mpas_model', u'MPAS-Model Documentation',
-     author, 'MPAS-Model', 'One line description of project.',
+    (master_doc, 'mpas_model', u'MPAS Documentation',
+     author, 'MPAS', 'One line description of project.',
      'Miscellaneous'),
 ]
 

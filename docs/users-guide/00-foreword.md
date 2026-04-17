@@ -19,6 +19,6 @@ The software developed for MPAS is open source, and it has been copyrighted unde
 We conclude by noting that this user's guide is a work in progress. We welcome suggestions for improvements to this guide, including additions, corrections, clarifications, etc. Updates to MPAS-A, including the most recent code, user's guide, and test cases, may be found at <https://mpas-dev.github.io/>.
 
 **Contributors to this guide:**
-Michael Duda, Laura Fowler, Bill Skamarock, Conrad Roesch, Doug Jacobsen, and Todd Ringler.
+Michael Duda, Laura Fowler, Bill Skamarock, Conrad Roesch, Doug Jacobsen, Todd Ringler, and David Fillmore.
 
 *The U.S. National Science Foundation National Center for Atmospheric Research (NSF NCAR) is operated by the University Corporation for Atmospheric Research (UCAR) and is sponsored by the National Science Foundation. Any opinions, findings, conclusions, or recommendations expressed in this publication are those of the authors and do not necessarily reflect the views of the National Science Foundation.*
