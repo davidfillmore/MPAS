@@ -1,16 +1,20 @@
 (sec-appendices)=
 # Appendices
 
-A short reference appendix with the assembled stencil coefficients.
-Extended step-by-step mathematical derivations — horizontal and
-vertical operator construction, symmetry and positive-definiteness
-proofs, Taylor analysis of truncation error, PCG analysis,
-$\boldsymbol{E}$-field reconstruction, and the exterior-calculus
-formulation — will be added as further appendix pages in a
-subsequent revision.
+A short reference appendix with the assembled stencil
+coefficients, followed by the extended step-by-step mathematical
+derivations.
 
 ```{toctree}
 :maxdepth: 2
+:caption: Stencil reference
 
 stencil-summary
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Extended derivations
+
+derivations/index
 ```

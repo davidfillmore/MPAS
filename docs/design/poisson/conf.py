@@ -41,6 +41,34 @@ bibtex_reference_style = "author_year"
 # -- HTML -----------------------------------------------------------
 html_theme = "sphinx_rtd_theme"
 html_title = "Poisson solver for MPAS-A — design narrative"
+
+# -- MathJax custom macros ------------------------------------------
+# Mirrors the \newcommand definitions in the LaTeX paper preamble so
+# that the ported derivations can use them verbatim.
+mathjax3_config = {
+    "tex": {
+        "macros": {
+            "bphi":   r"\boldsymbol{\varphi}",
+            "brho":   r"\boldsymbol{\rho}",
+            "bE":     r"\boldsymbol{E}",
+            "bx":     r"\boldsymbol{x}",
+            "bn":     r"\boldsymbol{n}",
+            "vu":     r"\boldsymbol{u}",
+            "vv":     r"\boldsymbol{v}",
+            "bb":     r"\boldsymbol{b}",
+            "bc":     r"\boldsymbol{c}",
+            "Rthree": r"\mathbb{R}^{3}",
+            "epsz":   r"\varepsilon_{0}",
+            "Aedge":  r"A_{e}",
+            "dcen":   r"d_{e}",
+            "elen":   r"\ell_{e}",
+            "vol":    r"V_{i,k}",
+            "Vol":    [r"V_{#1}", 1],
+            "dz":     [r"\Delta z_{#1}", 1],
+            "hlf":    r"\tfrac{1}{2}",
+        }
+    }
+}
 html_static_path  = []
 html_show_sphinx  = True
 html_show_copyright = True
