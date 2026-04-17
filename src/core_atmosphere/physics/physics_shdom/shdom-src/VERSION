@@ -38,14 +38,20 @@ Documentation (reference only; not compiled)
    Updatelist.txt       upstream version history
 
 ------------------------------------------------------------
+Reference source (in reference/ subdirectory; not compiled)
+------------------------------------------------------------
+   reference/shdom.f90  Upstream PROGRAM SHDOM. Kept in-repo so we can
+                        cherry-pick orchestration logic (adaptive grid
+                        setup, discrete-ordinate quadrature, direct-beam
+                        setup, SOLVE_RTE call, flux extraction) into
+                        MPAS's shdom_interface wrapper. Lives in the
+                        reference/ subdirectory so the top-level Makefile
+                        glob ignores it — Fortran only allows one PROGRAM
+                        per executable, and MPAS already has its own.
+
+------------------------------------------------------------
 Omitted from the upstream distribution
 ------------------------------------------------------------
-   shdom.f90            Upstream main program. Replaced by MPAS's
-                        mpas_atmphys_shdom_interface.F wrapper, which
-                        invokes SHDOM subroutines directly. The
-                        SHDOM_PROPERTY_ARRAYS module defined there is
-                        only referenced by PROGRAM SHDOM and is not
-                        needed by shdomsub*.f (verified by grep).
    shdom_nompi.f        Unused — we build with MPI.
    shdom_netcdf.f90     Unused — the non-netCDF stub is used instead.
    makefile             Replaced by physics_shdom/Makefile.
