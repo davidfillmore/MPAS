@@ -48,6 +48,7 @@ html_title = "Poisson solver for MPAS-A — design narrative"
 mathjax3_config = {
     "tex": {
         "macros": {
+            "bm":     [r"\boldsymbol{#1}", 1],
             "bphi":   r"\boldsymbol{\varphi}",
             "brho":   r"\boldsymbol{\rho}",
             "bE":     r"\boldsymbol{E}",
