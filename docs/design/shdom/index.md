@@ -28,12 +28,16 @@ formulation-of-record.
 :maxdepth: 2
 :caption: Contents
 
+introduction
+methods/index
+discussion
+conclusions
+appendices/index
 references
 ```
 
 :::{note}
-This site is under construction. Content pages (introduction, methods,
-discussion, conclusions, appendices) are being populated from the
-stable-first-pass LaTeX narrative; they will be added incrementally.
-The bibliography is live below.
+This site is under active revision. The main-text narrative is
+populated; the extended Evans-style SHDOM derivations will be added
+as further appendix pages in a subsequent revision.
 :::

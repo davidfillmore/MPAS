@@ -32,13 +32,20 @@ formulation-of-record.
 :maxdepth: 2
 :caption: Contents
 
+introduction
+governing-equations
+discretization
+solver
+verification-plan/index
+discussion
+conclusions
+appendices/index
 references
 ```
 
 :::{note}
-This site is under construction. Content pages (introduction,
-governing equations, discretization, solver, verification plan,
-discussion, conclusions, appendices) are being populated from the
-stable-first-pass LaTeX narrative; they will be added incrementally.
-The bibliography is live below.
+This site is under active revision. The main-text narrative and
+the five-tier verification plan are populated; extended step-by-step
+mathematical derivations will be added as further appendix pages
+in a subsequent revision.
 :::
