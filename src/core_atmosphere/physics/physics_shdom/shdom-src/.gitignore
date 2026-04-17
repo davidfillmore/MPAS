@@ -1,0 +1,12 @@
+# Override parent-directory gitignore rules so that vendored SHDOM source
+# files are tracked under their upstream filenames.
+#
+# Parent rules that apply here:
+#   src/core_atmosphere/physics/.gitignore : *.f90
+#       (ignores Fortran pre-processor output; SHDOM uses .f90 for source)
+#   .gitignore (repo root) : *.txt
+#       (ignores ocean-model statistical output; SHDOM uses .txt for docs)
+#
+# We want upstream-faithful filenames here, so re-include them:
+!*.f90
+!*.txt

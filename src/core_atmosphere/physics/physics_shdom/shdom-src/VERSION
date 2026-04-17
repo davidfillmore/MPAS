@@ -1,0 +1,74 @@
+Source:       https://coloradolinux.com/shdom/
+Author:       Frank Evans (evans@nit.colorado.edu)
+Affiliation:  Dept. of Atmospheric and Oceanic Sciences,
+              University of Colorado Boulder
+Upstream:     shdom.tar (latest distribution dated May 2015)
+Vendored:     2026-04-16 into src/core_atmosphere/physics/physics_shdom/shdom-src/
+
+------------------------------------------------------------
+License
+------------------------------------------------------------
+The SHDOM distribution does not include an explicit LICENSE file. The
+upstream README describes the code as freely distributed via web/ftp.
+
+Per user direction on 2026-04-16, we proceed on the working assumption
+of permissive license terms. If the actual terms turn out to be more
+restrictive (e.g. research-only, non-redistributable), the subtree
+distribution policy needs to be revisited. Original attribution
+(Frank Evans, CU Boulder) is preserved here, in README.upstream, and
+in every file header.
+
+------------------------------------------------------------
+Vendored subset (compiled into libshdom.a)
+------------------------------------------------------------
+   shdomsub1.f          core solver (spherical harmonic / discrete ordinate)
+   shdomsub2.f          pre- and post-solution support subroutines
+   shdomsub3.f          I/O subroutines
+   fftpack.f            FFT routines used by the angular transform
+   ocean_brdf.f         ocean surface BRDF routines
+   shdom_mpi.f90        MPI parallelism (already uses include 'mpif.h')
+   shdom_nonetcdf.f90   dummy netCDF stubs — MPAS handles its own I/O,
+                        so SHDOM's native netCDF path is not needed
+
+------------------------------------------------------------
+Documentation (reference only; not compiled)
+------------------------------------------------------------
+   README.upstream      upstream README (author, file list, citation)
+   shdom.txt            SHDOM user manual (~94 KB)
+   Updatelist.txt       upstream version history
+
+------------------------------------------------------------
+Omitted from the upstream distribution
+------------------------------------------------------------
+   shdom.f90            Upstream main program. Replaced by MPAS's
+                        mpas_atmphys_shdom_interface.F wrapper, which
+                        invokes SHDOM subroutines directly. The
+                        SHDOM_PROPERTY_ARRAYS module defined there is
+                        only referenced by PROGRAM SHDOM and is not
+                        needed by shdomsub*.f (verified by grep).
+   shdom_nompi.f        Unused — we build with MPI.
+   shdom_netcdf.f90     Unused — the non-netCDF stub is used instead.
+   makefile             Replaced by physics_shdom/Makefile.
+   Property-generation
+   utilities:           propgen, make_mie_table, miewig, indexwatice,
+                        make_tmatrix_table, tmatrixwig, lpd, tmd.par.f,
+                        plotscattab, AsciiPropertyFileToNetcdf. MPAS
+                        feeds optical properties from RRTMG, not from
+                        SHDOM's property generator. These may be added
+                        in a later phase if alternative optical-property
+                        pipelines become useful.
+   Run scripts:         run_brdf, run_mono_les, run_multproc,
+                        run_polarized, run_visualize, put.c. Not
+                        relevant to MPAS integration.
+   Example data:        *.lwc files, lesw16.nml.
+   IDL tools:           idl/ subdirectory. MPAS uses Python/matplotlib
+                        for visualization.
+
+------------------------------------------------------------
+Local modifications
+------------------------------------------------------------
+None at vendoring time. Subsequent patches (most likely flang
+compatibility tweaks) land as normal git commits in this subtree.
+Inspect history with:
+
+   git log --oneline -- src/core_atmosphere/physics/physics_shdom/shdom-src/
