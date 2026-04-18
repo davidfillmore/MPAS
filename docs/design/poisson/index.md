@@ -4,6 +4,8 @@
 
 *David Fillmore*
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19637636.svg)](https://doi.org/10.5281/zenodo.19637636)
+
 ---
 
 This is the public design narrative for an elliptic Poisson solver
@@ -24,9 +26,10 @@ This narrative is a living document. Major revisions are tagged on
 the underlying git repository at
 [`github.com/davidfillmore/MPAS`](https://github.com/davidfillmore/MPAS)
 and mint a Zenodo DOI via the GitHub↔Zenodo integration. The
-companion LaTeX manuscript targeting *Geoscientific Model
-Development* will cite the first tagged DOI as the citable
-formulation-of-record.
+formulation-of-record DOI for this first tagged version is
+[10.5281/zenodo.19637636](https://doi.org/10.5281/zenodo.19637636)
+(`design-poisson-v0.1`); the companion LaTeX manuscript targeting
+*Geoscientific Model Development* will cite this DOI.
 
 ```{toctree}
 :maxdepth: 2
