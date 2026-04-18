@@ -1,0 +1,6 @@
+# Build dependencies for the Poisson design-narrative RTD project.
+# Mirrors the extensions enabled in docs/design/poisson/conf.py.
+sphinx>=7
+sphinx_rtd_theme>=2
+myst-parser>=2
+sphinxcontrib-bibtex>=2.6

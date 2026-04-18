@@ -1,0 +1,21 @@
+# Read the Docs configuration for the SHDOM-in-MPAS-A design
+# narrative. Published as its own RTD project, distinct from the
+# upstream-port docs at docs/ and from the Poisson design narrative.
+#
+# RTD project: mpas-a-design-shdom
+# Config path in the RTD dashboard: docs/design/shdom/.readthedocs.yaml
+
+version: 2
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.12"
+
+sphinx:
+  configuration: docs/design/shdom/conf.py
+  fail_on_warning: true
+
+python:
+  install:
+    - requirements: docs/design/shdom/requirements.txt

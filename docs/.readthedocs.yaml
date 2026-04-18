@@ -1,0 +1,22 @@
+# Read the Docs configuration for the upstream-port MPAS docs
+# (users guide + technical description). This is one of three RTD
+# projects served from this repo; the two design-narrative trees
+# live under docs/design/ and have their own configs.
+#
+# RTD project: mpas-a-upstream
+# Config path in the RTD dashboard: docs/.readthedocs.yaml
+
+version: 2
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.12"
+
+sphinx:
+  configuration: docs/conf.py
+  fail_on_warning: false
+
+python:
+  install:
+    - requirements: docs/requirements.txt

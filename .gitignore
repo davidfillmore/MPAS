@@ -38,6 +38,9 @@ restart_timestamp
 # Text files (For statistical output from ocean model)
 *.txt
 !CMakeLists.txt
+!docs/requirements.txt
+!docs/design/shdom/requirements.txt
+!docs/design/poisson/requirements.txt
 
 # Directories with individual .gitignore files are:
 # src/external (Externals might have a different compilation method)

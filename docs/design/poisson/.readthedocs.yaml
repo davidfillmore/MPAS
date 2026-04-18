@@ -1,0 +1,21 @@
+# Read the Docs configuration for the TRiSK-based Poisson solver
+# design narrative. Published as its own RTD project, distinct from
+# the upstream-port docs at docs/ and from the SHDOM design narrative.
+#
+# RTD project: mpas-a-design-poisson
+# Config path in the RTD dashboard: docs/design/poisson/.readthedocs.yaml
+
+version: 2
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.12"
+
+sphinx:
+  configuration: docs/design/poisson/conf.py
+  fail_on_warning: true
+
+python:
+  install:
+    - requirements: docs/design/poisson/requirements.txt

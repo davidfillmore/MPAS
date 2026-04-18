@@ -1,0 +1,5 @@
+# Build dependencies for the upstream-port MPAS docs on Read the Docs.
+# Mirrors the extensions enabled in docs/conf.py.
+sphinx>=7
+sphinx_rtd_theme>=2
+myst-parser>=2
