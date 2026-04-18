@@ -3,7 +3,7 @@
 # projects served from this repo; the two design-narrative trees
 # live under docs/design/ and have their own configs.
 #
-# RTD project: mpas-a-upstream
+# RTD project: mpas-upstream
 # Config path in the RTD dashboard: docs/.readthedocs.yaml
 
 version: 2

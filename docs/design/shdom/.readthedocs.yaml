@@ -2,7 +2,7 @@
 # narrative. Published as its own RTD project, distinct from the
 # upstream-port docs at docs/ and from the Poisson design narrative.
 #
-# RTD project: mpas-a-design-shdom
+# RTD project: mpas-shdom
 # Config path in the RTD dashboard: docs/design/shdom/.readthedocs.yaml
 
 version: 2
