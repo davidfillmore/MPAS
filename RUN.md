@@ -246,6 +246,30 @@ mpiexec -n 8 ./atmosphere_model 2>&1 | tee run.out
 
 Partition files available for 2, 4, 6, 8, 12, 16, 24 ranks.
 
+## Poisson Tier A.1 MMS
+
+The electrostatic Phase 1A benchmark runner prepares Cartesian MMS run
+directories under `~/Data/MPAS/poisson_tier_A1`, runs `atmosphere_model`,
+and writes `results/tier_A1_convergence.csv` plus
+`results/tier_A1_convergence.png`.
+
+```bash
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/scripts/run_tier_A1_cartesian_mms.py \
+  --run-root ~/Data/MPAS/poisson_tier_A1 \
+  --mesh-list 15km 7.5km 3.75km 1.875km \
+  --ranks 4 \
+  --model ./atmosphere_model
+```
+
+Each mesh needs either `meshes/<mesh>/` or `runs/<mesh>/` to contain
+`namelist.atmosphere`, `streams.atmosphere`, the input NetCDF files, and
+a partition file matching `--ranks`, for example
+`*.graph.info.part.4` when using `--ranks 4`. The runner symlinks the
+model executable, forces stream `io_type="netcdf"`, removes stale
+`output.nc` and MPAS logs before reruns, and writes all generated run
+artifacts outside the source tree.
+
 ## Test Case Data
 
 Idealized test case data is downloaded from
