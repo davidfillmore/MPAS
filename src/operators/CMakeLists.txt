@@ -2,6 +2,7 @@ list(APPEND _mpas_operators_src
     mpas_elliptic_operator.F
     mpas_geometry_utils.F
     mpas_matrix_operations.F
+    mpas_pcg_solver.F
     mpas_rbf_interpolation.F
     mpas_spline_interpolation.F
     mpas_tensor_operations.F
