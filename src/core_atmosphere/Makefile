@@ -29,6 +29,8 @@ OBJS = mpas_atm_core.o \
        mpas_atm_threading.o \
        mpas_atm_halos.o
 
+.PHONY: electrostatic
+
 all: $(PHYSCORE) $(CHEMCORE) dycore diagcore electrostatic atmcore utilities
 
 core_reg:
