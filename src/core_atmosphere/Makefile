@@ -67,7 +67,7 @@ dycore: mpas_atm_dimensions.o $(PHYSCORE) $(CHEMCORE)
 diagcore: $(PHYSCORE) dycore
 	( cd diagnostics; $(MAKE) all PHYSICS="$(PHYSICS)" )
 
-electrostatic:
+electrostatic: mpas_atm_halos.o
 	( cd electrostatic; $(MAKE) all )
 
 utilities: $(PHYSCORE)
@@ -78,7 +78,7 @@ atmcore: $(PHYSCORE) dycore diagcore electrostatic $(OBJS)
 
 mpas_atm_core_interface.o: mpas_atm_core.o
 
-mpas_atm_core.o: dycore diagcore mpas_atm_threading.o mpas_atm_halos.o
+mpas_atm_core.o: dycore diagcore electrostatic mpas_atm_threading.o mpas_atm_halos.o
 
 mpas_atm_dimensions.o:
 
@@ -103,7 +103,7 @@ clean:
 	$(RM) $@ $*.mod
 ifeq "$(GEN_F90)" "true"
 	$(CPP) $(CPPFLAGS) $(PHYSICS) $(CHEMISTRY) $(CPPINCLUDES) -I./inc $< > $*.f90
-	$(FC) $(FFLAGS) -c $*.f90 $(FCINCLUDES) -I../framework -I../operators -I./physics -I./dynamics -I./diagnostics -I./physics/physics_wrf -I./physics/physics_mmm -I./physics/physics_noaa/UGWP $(MPAS_ESMF_INC) -I./chemistry
+	$(FC) $(FFLAGS) -c $*.f90 $(FCINCLUDES) -I../framework -I../operators -I./electrostatic -I./physics -I./dynamics -I./diagnostics -I./physics/physics_wrf -I./physics/physics_mmm -I./physics/physics_noaa/UGWP $(MPAS_ESMF_INC) -I./chemistry
 else
-	$(FC) $(CPPFLAGS) $(PHYSICS) $(CHEMISTRY) $(FFLAGS) -c $*.F $(CPPINCLUDES) $(FCINCLUDES) -I./inc -I../framework -I../operators -I./physics -I./dynamics -I./diagnostics -I./physics/physics_wrf -I./physics/physics_mmm -I./physics/physics_noaa/UGWP $(MPAS_ESMF_INC) -I./chemistry
+	$(FC) $(CPPFLAGS) $(PHYSICS) $(CHEMISTRY) $(FFLAGS) -c $*.F $(CPPINCLUDES) $(FCINCLUDES) -I./inc -I../framework -I../operators -I./electrostatic -I./physics -I./dynamics -I./diagnostics -I./physics/physics_wrf -I./physics/physics_mmm -I./physics/physics_noaa/UGWP $(MPAS_ESMF_INC) -I./chemistry
 endif

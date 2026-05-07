@@ -36,6 +36,7 @@ module atm_core
       use mpas_attlist, only : mpas_modify_att
       use mpas_string_utils, only : mpas_string_replace
       use mpas_atm_halos, only: atm_build_halo_groups, exchange_halo_group
+      use mpas_electrostatic_driver, only : mpas_electrostatic_init, mpas_electrostatic_solve
 #ifdef DO_CHEMISTRY
       use mpas_atm_chemistry, only: chemistry_init
 #endif
@@ -50,6 +51,8 @@ module atm_core
       type (block_type), pointer :: block
 
       logical, pointer :: config_do_restart
+      logical, pointer :: config_electrostatic_enable
+      logical, pointer :: config_electrostatic_solve_at_init
 
       type (mpas_pool_type), pointer :: state
       type (mpas_pool_type), pointer :: mesh
@@ -108,6 +111,8 @@ module atm_core
 
       call mpas_pool_get_config(domain % blocklist % configs, 'config_do_restart', config_do_restart)
       call mpas_pool_get_config(domain % blocklist % configs, 'config_dt', dt)
+      call mpas_pool_get_config(domain % blocklist % configs, 'config_electrostatic_enable', config_electrostatic_enable)
+      call mpas_pool_get_config(domain % blocklist % configs, 'config_electrostatic_solve_at_init', config_electrostatic_solve_at_init)
 
       !
       ! By default, the 'invariant' stream has an input_interval of "none", so
@@ -292,6 +297,13 @@ module atm_core
 #ifdef DO_CHEMISTRY
       call chemistry_init(domain % blocklist % configs, domain % blocklist % dimensions)
 #endif
+
+      if (config_electrostatic_enable) then
+         call mpas_electrostatic_init(domain)
+         if (config_electrostatic_solve_at_init) then
+            call mpas_electrostatic_solve(domain)
+         end if
+      end if
 
    end function atm_core_init
 
@@ -626,6 +638,7 @@ module atm_core
       use mpas_timer, only : mpas_timer_start, mpas_timer_stop
       use mpas_atm_boundaries, only : mpas_atm_update_bdy_tend
       use mpas_atm_diagnostics_manager, only : mpas_atm_diag_update, mpas_atm_diag_compute, mpas_atm_diag_reset
+      use mpas_electrostatic_driver, only : mpas_electrostatic_solve
    
       implicit none
    
@@ -635,6 +648,8 @@ module atm_core
       real (kind=RKIND) :: dt
       logical, pointer :: config_do_restart
       logical, pointer :: config_apply_lbcs
+      logical, pointer :: config_electrostatic_enable
+      real (kind=RKIND), pointer :: config_electrostatic_interval
       type (block_type), pointer :: block_ptr
 
       type (MPAS_Time_Type) :: currTime
@@ -653,6 +668,7 @@ module atm_core
       real (kind=R8KIND) :: diag_start_time, diag_stop_time
       real (kind=R8KIND) :: input_start_time, input_stop_time
       real (kind=R8KIND) :: output_start_time, output_stop_time
+      real (kind=RKIND) :: electrostatic_elapsed
       
       ierr = 0
 
@@ -662,6 +678,9 @@ module atm_core
       call mpas_get_timeInterval(mpas_get_clock_timestep(clock, ierr), dt=dt)
       call mpas_pool_get_config(domain % blocklist % configs, 'config_do_restart', config_do_restart)
       call mpas_pool_get_config(domain % blocklist % configs, 'config_restart_timestamp_name', config_restart_timestamp_name)
+      call mpas_pool_get_config(domain % blocklist % configs, 'config_electrostatic_enable', config_electrostatic_enable)
+      call mpas_pool_get_config(domain % blocklist % configs, 'config_electrostatic_interval', config_electrostatic_interval)
+      electrostatic_elapsed = 0.0_RKIND
 
       ! Avoid writing a restart file at the initial time
       call MPAS_stream_mgr_reset_alarms(domain % streamManager, streamID='restart', direction=MPAS_STREAM_OUTPUT, ierr=ierr)
@@ -827,6 +846,14 @@ module atm_core
          call mpas_advance_clock(clock)
          currTime = mpas_get_clock_time(clock, MPAS_NOW, ierr)
 
+         if (config_electrostatic_enable) then
+            electrostatic_elapsed = electrostatic_elapsed + dt
+            if (config_electrostatic_interval <= 0.0_RKIND .or. &
+                electrostatic_elapsed + 1.0e-12_RKIND >= config_electrostatic_interval) then
+               call mpas_electrostatic_solve(domain)
+               electrostatic_elapsed = 0.0_RKIND
+            end if
+         end if
 
          call mpas_dmpar_get_time(diag_start_time)
 
@@ -1054,6 +1081,7 @@ module atm_core
       use mpas_atm_threading, only : mpas_atm_threading_finalize
       use atm_time_integration, only : mpas_atm_dynamics_finalize
       use mpas_atm_halos, only: atm_destroy_halo_groups
+      use mpas_electrostatic_driver, only : mpas_electrostatic_finalize
    
 #ifdef DO_PHYSICS
       use mpas_atmphys_finalize
@@ -1087,6 +1115,8 @@ module atm_core
 #endif
 
       call mpas_atm_diag_cleanup()
+
+      call mpas_electrostatic_finalize(domain)
 
       call mpas_destroy_clock(clock, ierr)
       call mpas_decomp_destroy_decomp_list(domain % decompositions)
@@ -1850,4 +1880,3 @@ module atm_core
    end subroutine atm_initialize_deformation_weights
 
 end module atm_core
-
