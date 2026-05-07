@@ -450,6 +450,36 @@
                      possible_values=".true. or .false."/>
         </nml_record>
 
+        <nml_record name="electrostatic" in_defaults="true">
+                <nml_option name="config_electrostatic_enable" type="logical" default_value=".false."
+                     description="Master switch enabling the diagnostic Poisson electrostatic solver."/>
+
+                <nml_option name="config_electrostatic_solve_at_init" type="logical" default_value=".false."
+                     description="Run one electrostatic solve during initialization for zero-duration benchmarks."/>
+
+                <nml_option name="config_electrostatic_interval" type="real" default_value="0.0"
+                     units="s"
+                     description="Seconds between electrostatic solves. 0.0 = every model step when enabled."/>
+
+                <nml_option name="config_poisson_preconditioner" type="character" default_value="jacobi"
+                     possible_values="none,jacobi"
+                     description="Phase 1A PCG preconditioner."/>
+
+                <nml_option name="config_poisson_tol" type="real" default_value="1.0e-8"
+                     description="Relative residual tolerance for PCG."/>
+
+                <nml_option name="config_poisson_max_iter" type="integer" default_value="1000"
+                     description="Maximum PCG iterations."/>
+
+                <nml_option name="config_electrostatic_source" type="character" default_value="mms_cart"
+                     possible_values="mms_cart,external"
+                     description="Charge-density source for Phase 1A."/>
+
+                <nml_option name="config_electrostatic_bc_ground" type="real" default_value="0.0"
+                     units="V"
+                     description="Dirichlet potential at the ground face."/>
+        </nml_record>
+
 #ifdef MPAS_USE_MUSICA
         <nml_record name="musica" in_defaults="true">
                 <nml_option name="config_micm_file" type="character" default_value=""
@@ -482,6 +512,9 @@
                 <package name="ugwp_orog_stream" description="Input stream (and variables) for UGWP orography"/>
                 <package name="ugwp_ngw_stream"  description="Input stream (and variables) for UGWP NGW lookup table"/>
                 <package name="ugwp_diags_stream" description="Output stream (and variables) for UGWP output diagnostics"/>
+                <package name="electrostatic_pkg"
+                         description="Diagnostic Poisson electrostatic fields."
+                         active_when="config_electrostatic_enable"/>
                 <package name="les"
                          description="Variables and options associated with LES models"
                          active_when="trim(config_les_model) /= 'none'"/>
@@ -983,6 +1016,13 @@
 			<var name="ke"/>
 			<var name="uReconstructZonal"/>
 			<var name="uReconstructMeridional"/>
+			<var name="phi"/>
+			<var name="rho_charge"/>
+			<var name="E_normal"/>
+			<var name="E_vector"/>
+			<var name="cg_iter_count"/>
+			<var name="cg_residual_initial"/>
+			<var name="cg_residual_final"/>
 #ifdef DO_PHYSICS
 			<var name="i_rainnc"/>
 			<var name="rainnc"/>
@@ -2016,6 +2056,38 @@
                 <var name="brtemp" type="real" dimensions="nCells Time" units="K"
                      description="brightness temperature to calculate cloud top height; usually from geostationary IR window channel"
                      packages="jedi_da"/>
+
+        </var_struct>
+
+        <var_struct name="electrostatic" time_levs="1">
+
+                <var name="phi" type="real" dimensions="nVertLevels nCells" units="V"
+                     packages="electrostatic_pkg"
+                     description="Electrostatic potential at cell centers."/>
+
+                <var name="rho_charge" type="real" dimensions="nVertLevels nCells" units="C m^{-3}"
+                     packages="electrostatic_pkg"
+                     description="Free charge density supplied to the Poisson solver."/>
+
+                <var name="E_normal" type="real" dimensions="nVertLevels nEdges" units="V m^{-1}"
+                     packages="electrostatic_pkg"
+                     description="Horizontal edge-normal electric field component."/>
+
+                <var name="E_vector" type="real" dimensions="R3 nVertLevels nCells" units="V m^{-1}"
+                     packages="electrostatic_pkg"
+                     description="Cell-centered electric field vector."/>
+
+                <var name="cg_iter_count" type="integer" dimensions="Time" units="-"
+                     packages="electrostatic_pkg"
+                     description="PCG iteration count from most recent electrostatic solve."/>
+
+                <var name="cg_residual_initial" type="real" dimensions="Time" units="-"
+                     packages="electrostatic_pkg"
+                     description="Initial relative residual from most recent electrostatic solve."/>
+
+                <var name="cg_residual_final" type="real" dimensions="Time" units="-"
+                     packages="electrostatic_pkg"
+                     description="Final relative residual from most recent electrostatic solve."/>
 
         </var_struct>
 

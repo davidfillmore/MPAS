@@ -153,6 +153,9 @@ module mpas_atm_halos
          call mpas_dmpar_exch_group_create(domain, 'dynamics:scale')
          call mpas_dmpar_exch_group_add_field(domain, 'dynamics:scale', 'scale', timeLevel=1, haloLayers=(/1,2/))
 
+         call mpas_dmpar_exch_group_create(domain, 'electrostatic:phi')
+         call mpas_dmpar_exch_group_add_field(domain, 'electrostatic:phi', 'phi', timeLevel=1, haloLayers=(/1/))
+
 #ifdef DO_PHYSICS
          !
          ! Set up halo exchange groups used by physics
@@ -284,6 +287,10 @@ module mpas_atm_halos
          call mpas_halo_exch_group_add_field(domain, 'dynamics:scale', 'scale', timeLevel=1, haloLayers=(/1,2/))
          call mpas_halo_exch_group_complete(domain, 'dynamics:scale')
 
+         call mpas_halo_exch_group_create(domain, 'electrostatic:phi')
+         call mpas_halo_exch_group_add_field(domain, 'electrostatic:phi', 'phi', timeLevel=1, haloLayers=(/1/))
+         call mpas_halo_exch_group_complete(domain, 'electrostatic:phi')
+
 #ifdef DO_PHYSICS
          !
          ! Set up halo exchange groups used by physics
@@ -377,6 +384,7 @@ module mpas_atm_halos
          call mpas_dmpar_exch_group_destroy(domain, 'dynamics:scalars_old')
          call mpas_dmpar_exch_group_destroy(domain, 'dynamics:w')
          call mpas_dmpar_exch_group_destroy(domain, 'dynamics:scale')
+         call mpas_dmpar_exch_group_destroy(domain, 'electrostatic:phi')
 
 #ifdef DO_PHYSICS
          !
@@ -413,6 +421,7 @@ module mpas_atm_halos
          call mpas_halo_exch_group_destroy(domain, 'dynamics:scalars_old')
          call mpas_halo_exch_group_destroy(domain, 'dynamics:w')
          call mpas_halo_exch_group_destroy(domain, 'dynamics:scale')
+         call mpas_halo_exch_group_destroy(domain, 'electrostatic:phi')
 
 #ifdef DO_PHYSICS
          !
@@ -439,4 +448,3 @@ module mpas_atm_halos
    end subroutine atm_destroy_halo_groups
 
 end module mpas_atm_halos
-
