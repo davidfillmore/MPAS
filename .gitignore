@@ -64,6 +64,7 @@ src/core_*/inc
 
 # Sphinx documentation build output
 docs/_build/
+docs/design/*/_build/
 
 # macOS debug symbol bundles (emitted alongside dylibs/executables by clang/flang -g)
 *.dSYM/
