@@ -1,6 +1,7 @@
 .SUFFIXES: .F .o
 
 OBJS = mpas_electrostatic_benchmarks.o \
+       mpas_electrostatic_bcs.o \
        mpas_electrostatic_source.o
 
 all: $(OBJS)
