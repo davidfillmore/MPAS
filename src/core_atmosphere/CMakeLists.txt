@@ -326,6 +326,8 @@ set(ATMOSPHERE_CORE_UTILS_SOURCES
     build_tables.F)
 list(TRANSFORM ATMOSPHERE_CORE_UTILS_SOURCES PREPEND utils/)
 
+include(electrostatic/CMakeLists.txt)
+
 # core_atosphere
 set(ATMOSPHERE_CORE_SOURCES
     mpas_atm_dimensions.F
@@ -348,6 +350,7 @@ set(ATMOSPHERE_CORE_INCLUDES
 
 
 add_library(core_atmosphere ${ATMOSPHERE_CORE_SOURCES}
+            ${ELECTROSTATIC_SOURCES}
             ${ATMOSPHERE_CORE_PHYSICS_NOAMP_UTILITY_SOURCES}
             ${ATMOSPHERE_CORE_PHYSICS_NOAMP_MPAS_DRIVER_SOURCES}
             ${ATMOSPHERE_CORE_PHYSICS_NOAMP_SRC_SOURCES}

@@ -21,13 +21,15 @@ ifdef CHEMISTRY
     CHEM_OBJS = libchem/*.o
 endif
 
+ELECTROSTATIC_OBJS = $(wildcard electrostatic/*.o)
+
 OBJS = mpas_atm_core.o \
        mpas_atm_core_interface.o \
        mpas_atm_dimensions.o \
        mpas_atm_threading.o \
        mpas_atm_halos.o
 
-all: $(PHYSCORE) $(CHEMCORE) dycore diagcore atmcore utilities
+all: $(PHYSCORE) $(CHEMCORE) dycore diagcore electrostatic atmcore utilities
 
 core_reg:
 	$(CPP) $(CPPFLAGS) $(CPPINCLUDES) $(PHYSICS) $(CHEMISTRY) Registry.xml > Registry_processed.xml
@@ -63,11 +65,14 @@ dycore: mpas_atm_dimensions.o $(PHYSCORE) $(CHEMCORE)
 diagcore: $(PHYSCORE) dycore
 	( cd diagnostics; $(MAKE) all PHYSICS="$(PHYSICS)" )
 
+electrostatic:
+	( cd electrostatic; $(MAKE) all )
+
 utilities: $(PHYSCORE)
 	( cd utils; $(MAKE) all PHYSICS="$(PHYSICS)" )
 
-atmcore: $(PHYSCORE) dycore diagcore $(OBJS)
-	ar -ru libdycore.a $(OBJS) dynamics/*.o $(PHYS_OBJS) $(CHEM_OBJS) diagnostics/*.o
+atmcore: $(PHYSCORE) dycore diagcore electrostatic $(OBJS)
+	ar -ru libdycore.a $(OBJS) dynamics/*.o $(ELECTROSTATIC_OBJS) $(PHYS_OBJS) $(CHEM_OBJS) diagnostics/*.o
 
 mpas_atm_core_interface.o: mpas_atm_core.o
 
@@ -80,6 +85,7 @@ clean:
 	( cd chemistry; $(MAKE) clean )
 	( cd dynamics; $(MAKE) clean )
 	( cd diagnostics; $(MAKE) clean )
+	( cd electrostatic; $(MAKE) clean )
 	( cd utils; $(MAKE) clean )
 	( cd ../..; rm -f *TBL )
 	( cd ../..; rm -f *DATA* )
