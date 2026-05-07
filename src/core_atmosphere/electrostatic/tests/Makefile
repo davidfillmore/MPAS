@@ -1,5 +1,5 @@
 FC ?= mpifort
-FFLAGS ?= -O0 -g -fcheck=all
+FFLAGS ?= -O0 -g -fconvert=big-endian -ffree-form -fdefault-real-8 -fdefault-double-8
 
 MPAS_ROOT := ../../../..
 INCLUDES := -I$(MPAS_ROOT)/src/framework -I$(MPAS_ROOT)/src/operators -I..

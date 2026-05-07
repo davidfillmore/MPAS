@@ -1,4 +1,5 @@
 list(APPEND _mpas_operators_src
+    mpas_elliptic_operator.F
     mpas_geometry_utils.F
     mpas_matrix_operations.F
     mpas_rbf_interpolation.F

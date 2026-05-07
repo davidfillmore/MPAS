@@ -1,6 +1,7 @@
 .SUFFIXES: .F .o
 
 OBJS = mpas_vector_operations.o \
+       mpas_elliptic_operator.o \
        mpas_matrix_operations.o \
        mpas_tensor_operations.o \
        mpas_rbf_interpolation.o \
@@ -19,6 +20,7 @@ operators: $(OBJS) $(DEPS)
 	ar -ru libops.a $(OBJS)
 
 mpas_vector_operations.o: $(DEPS)
+mpas_elliptic_operator.o: $(DEPS)
 mpas_matrix_operations.o: $(DEPS)
 mpas_tensor_operations.o: mpas_vector_operations.o mpas_matrix_operations.o $(DEPS)
 mpas_rbf_interpolation.o: mpas_vector_operations.o
