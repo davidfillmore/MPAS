@@ -56,6 +56,27 @@ quasi-uniform spacing. The pass criterion is $\text{slope} \geq
 mesh is anticipated from harmonic resolvability and is not
 disqualifying.
 
+### Current diagnostic status
+
+The implemented Tier A.2 runner separates the coupled three-dimensional
+manufactured-solution smoke case from the horizontal-isolated formal accuracy
+case, matching the Tier A.1 split. The official SCVT mesh sequence has not yet
+met the original global second-order acceptance criterion. Operator-only and
+solution-error diagnostics localize the convergence loss to graph rings around
+the twelve pentagonal cells in the spherical mesh; excluding a fixed number of
+defect rings restores near-second-order $L^2$ behavior in the regular
+hexagonal region.
+
+A follow-on operator-only prototype tested two local correction ideas. Bounded
+positive shared edge-factor retuning preserves the current symmetric two-point
+operator structure, but did not restore the A.2 global convergence rate. A
+local tangent-plane quadratic least-squares replacement did restore global
+$L^2$ convergence in the prototype, but it leaves the current two-point
+SPD/mimetic operator class and is therefore diagnostic only. The A.2 gate
+remains deferred until the project either documents the current
+defect-limited global behavior or adopts a deliberately designed
+mimetic/multi-point defect correction.
+
 The manufactured-solution sources {eq}`eq-mms-cart` and
 {eq}`eq-mms-sphere` are obtained by direct substitution into the
 continuous operator; the standard algebraic expansion is omitted.

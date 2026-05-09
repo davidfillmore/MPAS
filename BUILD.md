@@ -333,6 +333,23 @@ make -j8 llvm \
   PRECISION=double
 ```
 
+Focused Python helper checks are also available without building MPAS-A:
+
+```bash
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/tests/test_tier_A1_script.py
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/tests/test_tier_A2_script.py
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/tests/test_tier_A2_defect_correction.py
+```
+
+GitHub Actions runs these Python helper checks on changes to the
+electrostatic scripts/tests and Poisson documentation. The CI job installs
+only `netCDF4`, `numpy`, and `scipy`; full MPAS-A builds and mesh-generation
+runs remain local/manual because they depend on the clang/flang MPI stack,
+PIO, PnetCDF, and test mesh bundles.
+
 #### LLVM Build Technical Details
 
 The `llvm` target configures:

@@ -323,6 +323,52 @@ sequence has not yet met the formal second-order spherical MMS acceptance
 criterion, so use these commands for operator investigation rather than as a
 paper-grade convergence result.
 
+### Tier A.2 Defect-Correction Prototype
+
+The defect-correction prototype is an operator-only diagnostic for the
+topological-defect neighborhoods in the official SCVT meshes. It does not
+modify MPAS inputs or Fortran source. Use it to compare the baseline
+cell-centered two-point spherical Laplacian against two experimental
+corrections:
+
+- `edge-factors`: bounded positive shared edge factors near non-hex cells,
+  preserving the current symmetric two-point operator structure.
+- `local-lsq`: local tangent-plane quadratic least-squares replacement at
+  selected cells, diagnostic only because it leaves the current two-point SPD
+  operator class.
+
+Run the bounded edge-factor prototype:
+
+```bash
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/scripts/prototype_tier_A2_defect_correction.py \
+  --run-root ~/Data/MPAS/poisson_tier_A2_scvt \
+  --mesh-list 480km 240km 120km 60km \
+  --fit-rings 6 \
+  --active-rings 5 \
+  --fit-lmax 4 \
+  --output ~/Data/MPAS/poisson_tier_A2_scvt/results/tier_A2_defect_correction_prototype_fit6_active5.csv
+```
+
+Run the local-LSQ fallback demonstration:
+
+```bash
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/scripts/prototype_tier_A2_defect_correction.py \
+  --method local-lsq \
+  --run-root ~/Data/MPAS/poisson_tier_A2_scvt \
+  --mesh-list 480km 240km 120km 60km \
+  --active-rings 999 \
+  --fit-rings 999 \
+  --report-exclusion-rings 0 \
+  --output ~/Data/MPAS/poisson_tier_A2_scvt/results/tier_A2_defect_correction_prototype_local_all.csv
+```
+
+Current interpretation: positive shared edge-factor retuning is insufficient
+for the A.2 global convergence loss. The local-LSQ path restores global L2 in
+the prototype, but is not a production correction because it changes the
+operator class.
+
 ## Test Case Data
 
 Idealized test case data is downloaded from

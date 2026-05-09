@@ -24,7 +24,6 @@ import sys
 
 import netCDF4 as nc
 import numpy as np
-from mpas_tools.mesh.creation.build_mesh import build_spherical_mesh
 
 
 EARTH_RADIUS_M = 6371229.0
@@ -230,6 +229,8 @@ def clean_generated_mesh_files(work_dir):
 
 def generate_spherical_mesh(bundle_dir, work_dir, spacing_km, earth_radius, plot_cell_width, force):
     """Generate grid.nc and graph.info for one uniform spherical mesh."""
+    from mpas_tools.mesh.creation.build_mesh import build_spherical_mesh
+
     grid = bundle_dir / "grid.nc"
     graph = bundle_dir / "graph.info"
     if grid.exists() and graph.exists() and not force:
