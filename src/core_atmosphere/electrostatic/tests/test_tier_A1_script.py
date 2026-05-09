@@ -111,6 +111,60 @@ class TierA1ScriptTests(unittest.TestCase):
         self.assertEqual(result["cg_iter_count"], 4)
         self.assertEqual(result["nCells"], 3)
 
+    def test_compute_errors_uses_periodic_mesh_attributes(self):
+        script = load_script()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = pathlib.Path(tmp) / "output.nc"
+            x = np.array([0.0, 1.0, 2.0])
+            y = np.array([0.0, 1.0, 2.0])
+            zgrid = np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.5, 0.5, 0.5],
+                    [1.0, 1.0, 1.0],
+                ]
+            )
+            zmid = 0.5 * (zgrid[:-1, :] + zgrid[1:, :])
+            phi = script.phi_exact(x[None, :], y[None, :], zmid, 4.0, 5.0, 1.0)
+
+            with nc.Dataset(output, "w") as ds:
+                ds.setncattr("is_periodic", "YES")
+                ds.setncattr("x_period", 4.0)
+                ds.setncattr("y_period", 5.0)
+                ds.createDimension("Time", 1)
+                ds.createDimension("nCells", 3)
+                ds.createDimension("nVertLevels", 2)
+                ds.createDimension("nVertLevelsP1", 3)
+                ds.createDimension("nEdges", 1)
+                ds.createDimension("R3", 3)
+                ds.createVariable("phi", "f8", ("Time", "nVertLevels", "nCells"))[
+                    0, :, :
+                ] = phi
+                ds.createVariable("xCell", "f8", ("nCells",))[:] = x
+                ds.createVariable("yCell", "f8", ("nCells",))[:] = y
+                ds.createVariable("zgrid", "f8", ("nVertLevelsP1", "nCells"))[:] = zgrid
+                ds.createVariable("areaCell", "f8", ("nCells",))[:] = 1.0
+                ds.createVariable("rho_charge", "f8", ("Time", "nVertLevels", "nCells"))[
+                    0, :, :
+                ] = 0.0
+                ds.createVariable("E_normal", "f8", ("Time", "nVertLevels", "nEdges"))[
+                    0, :, :
+                ] = 0.0
+                ds.createVariable(
+                    "E_vector", "f8", ("Time", "R3", "nVertLevels", "nCells")
+                )[0, :, :, :] = 0.0
+                ds.createVariable("cg_iter_count", "i4", ("Time",))[:] = 4
+                ds.createVariable("cg_residual_initial", "f8", ("Time",))[:] = 1.0
+                ds.createVariable("cg_residual_final", "f8", ("Time",))[:] = 1.0e-10
+
+            result = script.compute_errors(output)
+
+        self.assertLess(result["l2"], 1.0e-14)
+        self.assertLess(result["linf"], 1.0e-14)
+        self.assertEqual(result["x_period"], 4.0)
+        self.assertEqual(result["y_period"], 5.0)
+
 
 if __name__ == "__main__":
     unittest.main()

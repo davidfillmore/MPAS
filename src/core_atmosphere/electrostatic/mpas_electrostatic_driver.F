@@ -18,6 +18,7 @@ module mpas_electrostatic_driver
    use mpas_kind_types, only : RKIND, StrKIND
    use mpas_pool_routines
    use mpas_log, only : mpas_log_write
+   use mpas_dmpar, only : mpas_dmpar_sum_real
    use mpas_atm_halos, only : exchange_halo_group
    use mpas_vector_reconstruction, only : mpas_reconstruct
    use mpas_elliptic_operator, only : mpas_elliptic_operator_type, elliptic_operator_init
@@ -39,7 +40,9 @@ module mpas_electrostatic_driver
    type electrostatic_block_state
       type(mpas_elliptic_operator_type) :: op
       type(mpas_pcg_solver_type) :: solver
+      integer :: nCellsSolve = 0
       real(kind=RKIND), allocatable :: rhs(:,:)
+      real(kind=RKIND), allocatable :: x(:,:)
       real(kind=RKIND), allocatable :: zMid(:,:)
       real(kind=RKIND), allocatable :: E_vertical(:,:)
       real(kind=RKIND), allocatable :: E_x(:,:)
@@ -121,11 +124,12 @@ contains
       block_ptr => domain % blocklist
       state_ptr => block_states
       do while (associated(block_ptr) .and. associated(state_ptr))
-         call solve_block_potential(block_ptr, state_ptr)
+         call prepare_block_potential_rhs(block_ptr, state_ptr)
          block_ptr => block_ptr % next
          state_ptr => state_ptr % next
       end do
 
+      call solve_domain_potential(domain)
       call exchange_halo_group(domain, 'electrostatic:phi')
 
       block_ptr => domain % blocklist
@@ -158,6 +162,7 @@ contains
          call state_ptr % op % destroy()
          call state_ptr % solver % destroy()
          if (allocated(state_ptr % rhs)) deallocate(state_ptr % rhs)
+         if (allocated(state_ptr % x)) deallocate(state_ptr % x)
          if (allocated(state_ptr % zMid)) deallocate(state_ptr % zMid)
          if (allocated(state_ptr % E_vertical)) deallocate(state_ptr % E_vertical)
          if (allocated(state_ptr % E_x)) deallocate(state_ptr % E_x)
@@ -189,6 +194,7 @@ contains
 
       type(mpas_pool_type), pointer :: mesh_pool, es_pool
       integer, pointer :: nCells_ptr, nEdges_ptr, nVertLevels_ptr, maxEdges_ptr
+      integer, pointer :: nCellsSolve_ptr
       integer, pointer :: max_iter
       integer :: nCells, nEdges, nVertLevels, maxEdges, preconditioner
       integer, dimension(:), pointer :: nEdgesOnCell
@@ -199,17 +205,21 @@ contains
       real(kind=RKIND), dimension(:,:), pointer :: phi, rho_charge, E_normal
       real(kind=RKIND), dimension(:,:,:), pointer :: E_vector
       real(kind=RKIND), pointer :: tol
+      real(kind=RKIND), pointer :: mesh_x_period, mesh_y_period
       real(kind=RKIND), allocatable :: dz(:)
+      logical, pointer :: is_periodic
       character(len=StrKIND), pointer :: pc_name
 
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
       call mpas_pool_get_subpool(block_ptr % structs, 'electrostatic', es_pool)
 
       call mpas_pool_get_dimension(mesh_pool, 'nCells', nCells_ptr)
+      call mpas_pool_get_dimension(mesh_pool, 'nCellsSolve', nCellsSolve_ptr)
       call mpas_pool_get_dimension(mesh_pool, 'nEdges', nEdges_ptr)
       call mpas_pool_get_dimension(mesh_pool, 'nVertLevels', nVertLevels_ptr)
       call mpas_pool_get_dimension(mesh_pool, 'maxEdges', maxEdges_ptr)
       nCells = nCells_ptr
+      state_ptr % nCellsSolve = nCellsSolve_ptr
       nEdges = nEdges_ptr
       nVertLevels = nVertLevels_ptr
       maxEdges = maxEdges_ptr
@@ -223,12 +233,16 @@ contains
       call mpas_pool_get_array(mesh_pool, 'xCell', xCell)
       call mpas_pool_get_array(mesh_pool, 'yCell', yCell)
       call mpas_pool_get_array(mesh_pool, 'zgrid', zgrid)
+      call mpas_pool_get_config(mesh_pool, 'is_periodic', is_periodic)
+      call mpas_pool_get_config(mesh_pool, 'x_period', mesh_x_period)
+      call mpas_pool_get_config(mesh_pool, 'y_period', mesh_y_period)
 
       call mpas_pool_get_config(block_ptr % configs, 'config_poisson_preconditioner', pc_name)
       call mpas_pool_get_config(block_ptr % configs, 'config_poisson_tol', tol)
       call mpas_pool_get_config(block_ptr % configs, 'config_poisson_max_iter', max_iter)
 
       allocate(state_ptr % rhs(nVertLevels,nCells))
+      allocate(state_ptr % x(nVertLevels,nCells))
       allocate(state_ptr % zMid(nVertLevels,nCells))
       allocate(state_ptr % E_vertical(nVertLevels,nCells))
       allocate(state_ptr % E_x(nVertLevels,nCells))
@@ -241,6 +255,10 @@ contains
       call fill_z_geometry(nCells, nVertLevels, zgrid, state_ptr % zMid, dz)
       call infer_mms_periods(nCells, nVertLevels, xCell, yCell, zgrid, &
                              state_ptr % x_period, state_ptr % y_period, state_ptr % z_top)
+      if (is_periodic) then
+         if (mesh_x_period > 0.0_RKIND) state_ptr % x_period = mesh_x_period
+         if (mesh_y_period > 0.0_RKIND) state_ptr % y_period = mesh_y_period
+      end if
 
       preconditioner = preconditioner_from_name(pc_name)
       call elliptic_operator_init(state_ptr % op, nCells, nEdges, nVertLevels, maxEdges, &
@@ -249,6 +267,7 @@ contains
       call pcg_init(state_ptr % solver, nCells, nVertLevels, preconditioner, max(1, max_iter), tol)
 
       state_ptr % rhs = 0.0_RKIND
+      state_ptr % x = 0.0_RKIND
       state_ptr % E_vertical = 0.0_RKIND
       state_ptr % E_x = 0.0_RKIND
       state_ptr % E_y = 0.0_RKIND
@@ -272,24 +291,23 @@ contains
 
 !***********************************************************************
 !
-!  routine solve_block_potential
+!  routine prepare_block_potential_rhs
 !
-!> \brief Fill source terms and solve A phi = rhs for one block
+!> \brief Fill source terms and RHS for one block
 !
 !-----------------------------------------------------------------------
-   subroutine solve_block_potential(block_ptr, state_ptr)
+   subroutine prepare_block_potential_rhs(block_ptr, state_ptr)
 
       type(block_type), pointer, intent(inout) :: block_ptr
       type(electrostatic_block_state), pointer, intent(inout) :: state_ptr
 
       type(mpas_pool_type), pointer :: mesh_pool, es_pool
       integer, pointer :: nCells_ptr, nVertLevels_ptr
-      integer :: nCells, nVertLevels, iter_count, status
+      integer :: nCells, nVertLevels
       real(kind=RKIND), dimension(:), pointer :: xCell, yCell
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, rho_charge
       real(kind=RKIND), pointer :: phi_ground
-      real(kind=RKIND) :: r0, rfinal
       character(len=StrKIND), pointer :: source_name
 
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
@@ -324,17 +342,342 @@ contains
                                              state_ptr % op % v_weight_lower, state_ptr % rhs)
       end if
 
-      call state_ptr % solver % solve(state_ptr % op, state_ptr % rhs, phi, &
-                                      iter_count, r0, rfinal, status)
+      state_ptr % x = phi
 
-      call set_solver_diagnostics(es_pool, iter_count, r0, rfinal)
+   end subroutine prepare_block_potential_rhs
+
+!***********************************************************************
+!
+!  routine solve_domain_potential
+!
+!> \brief Solve A phi = rhs over the full decomposed domain
+!
+!-----------------------------------------------------------------------
+   subroutine solve_domain_potential(domain)
+
+      type(domain_type), intent(inout) :: domain
+
+      type(electrostatic_block_state), pointer :: state_ptr
+      integer :: iter, iter_count, max_iter, status
+      real(kind=RKIND) :: alpha, beta, denom, rhs_norm, r0, rfinal, rz_new, rz_old, tol
+
+      if (.not. associated(block_states)) return
+
+      max_iter = max(1, block_states % solver % max_iter)
+      tol = block_states % solver % tol
+      iter_count = 0
+      status = 1
+
+      call matvec_domain_vector(domain, 'x')
+
+      state_ptr => block_states
+      do while (associated(state_ptr))
+         state_ptr % solver % r = 0.0_RKIND
+         state_ptr % solver % r(:,1:state_ptr % nCellsSolve) = &
+            state_ptr % rhs(:,1:state_ptr % nCellsSolve) - &
+            state_ptr % solver % Ap(:,1:state_ptr % nCellsSolve)
+         state_ptr => state_ptr % next
+      end do
+
+      rhs_norm = sqrt(domain_dot('rhs', 'rhs', domain))
+      r0 = domain_residual_norm('r', rhs_norm, domain)
+      rfinal = r0
+
+      if (rfinal <= tol) then
+         status = 0
+         call finish_domain_pcg(domain, iter_count, r0, rfinal, status)
+         return
+      end if
+
+      if (.not. apply_domain_preconditioner(status)) then
+         call finish_domain_pcg(domain, iter_count, r0, rfinal, status)
+         return
+      end if
+
+      rz_old = domain_dot('r', 'z', domain)
+      if (rz_old <= 0.0_RKIND) then
+         status = 2
+         call finish_domain_pcg(domain, iter_count, r0, rfinal, status)
+         return
+      end if
+
+      state_ptr => block_states
+      do while (associated(state_ptr))
+         state_ptr % solver % p = 0.0_RKIND
+         state_ptr % solver % p(:,1:state_ptr % nCellsSolve) = &
+            state_ptr % solver % z(:,1:state_ptr % nCellsSolve)
+         state_ptr => state_ptr % next
+      end do
+
+      do iter = 1, max_iter
+         call matvec_domain_vector(domain, 'p')
+         denom = domain_dot('p', 'Ap', domain)
+         if (denom <= 0.0_RKIND) then
+            iter_count = iter - 1
+            status = 2
+            call finish_domain_pcg(domain, iter_count, r0, rfinal, status)
+            return
+         end if
+
+         alpha = rz_old / denom
+         state_ptr => block_states
+         do while (associated(state_ptr))
+            state_ptr % x(:,1:state_ptr % nCellsSolve) = &
+               state_ptr % x(:,1:state_ptr % nCellsSolve) + &
+               alpha * state_ptr % solver % p(:,1:state_ptr % nCellsSolve)
+            state_ptr % solver % r(:,1:state_ptr % nCellsSolve) = &
+               state_ptr % solver % r(:,1:state_ptr % nCellsSolve) - &
+               alpha * state_ptr % solver % Ap(:,1:state_ptr % nCellsSolve)
+            state_ptr => state_ptr % next
+         end do
+
+         rfinal = domain_residual_norm('r', rhs_norm, domain)
+         iter_count = iter
+         if (rfinal <= tol) then
+            status = 0
+            call finish_domain_pcg(domain, iter_count, r0, rfinal, status)
+            return
+         end if
+
+         if (.not. apply_domain_preconditioner(status)) then
+            call finish_domain_pcg(domain, iter_count, r0, rfinal, status)
+            return
+         end if
+
+         rz_new = domain_dot('r', 'z', domain)
+         if (rz_new <= 0.0_RKIND) then
+            status = 2
+            call finish_domain_pcg(domain, iter_count, r0, rfinal, status)
+            return
+         end if
+
+         beta = rz_new / rz_old
+         state_ptr => block_states
+         do while (associated(state_ptr))
+            state_ptr % solver % p(:,1:state_ptr % nCellsSolve) = &
+               state_ptr % solver % z(:,1:state_ptr % nCellsSolve) + &
+               beta * state_ptr % solver % p(:,1:state_ptr % nCellsSolve)
+            state_ptr => state_ptr % next
+         end do
+         rz_old = rz_new
+      end do
+
+      status = 1
+      call finish_domain_pcg(domain, iter_count, r0, rfinal, status)
+
+   end subroutine solve_domain_potential
+
+!***********************************************************************
+!
+!  routine matvec_domain_vector
+!
+!> \brief Apply the operator to a decomposed vector with halo exchange
+!
+!-----------------------------------------------------------------------
+   subroutine matvec_domain_vector(domain, vector_name)
+
+      type(domain_type), intent(inout) :: domain
+      character(len=*), intent(in) :: vector_name
+
+      type(block_type), pointer :: block_ptr
+      type(electrostatic_block_state), pointer :: state_ptr
+      type(mpas_pool_type), pointer :: es_pool
+      real(kind=RKIND), dimension(:,:), pointer :: phi
+
+      block_ptr => domain % blocklist
+      state_ptr => block_states
+      do while (associated(block_ptr) .and. associated(state_ptr))
+         call mpas_pool_get_subpool(block_ptr % structs, 'electrostatic', es_pool)
+         call mpas_pool_get_array(es_pool, 'phi', phi)
+         phi = 0.0_RKIND
+         select case (trim(vector_name))
+         case ('x')
+            phi(:,1:state_ptr % nCellsSolve) = state_ptr % x(:,1:state_ptr % nCellsSolve)
+         case ('p')
+            phi(:,1:state_ptr % nCellsSolve) = state_ptr % solver % p(:,1:state_ptr % nCellsSolve)
+         end select
+         block_ptr => block_ptr % next
+         state_ptr => state_ptr % next
+      end do
+
+      call exchange_halo_group(domain, 'electrostatic:phi')
+
+      block_ptr => domain % blocklist
+      state_ptr => block_states
+      do while (associated(block_ptr) .and. associated(state_ptr))
+         call mpas_pool_get_subpool(block_ptr % structs, 'electrostatic', es_pool)
+         call mpas_pool_get_array(es_pool, 'phi', phi)
+         call state_ptr % op % matvec(phi, state_ptr % solver % Ap)
+         block_ptr => block_ptr % next
+         state_ptr => state_ptr % next
+      end do
+
+   end subroutine matvec_domain_vector
+
+!***********************************************************************
+!
+!  routine apply_domain_preconditioner
+!
+!> \brief Apply the configured block-Jacobi preconditioner to owned cells
+!
+!-----------------------------------------------------------------------
+   logical function apply_domain_preconditioner(status)
+
+      integer, intent(out) :: status
+
+      type(electrostatic_block_state), pointer :: state_ptr
+
+      apply_domain_preconditioner = .false.
+
+      state_ptr => block_states
+      do while (associated(state_ptr))
+         state_ptr % solver % z = 0.0_RKIND
+         select case (state_ptr % solver % preconditioner)
+         case (PC_NONE)
+            state_ptr % solver % z(:,1:state_ptr % nCellsSolve) = &
+               state_ptr % solver % r(:,1:state_ptr % nCellsSolve)
+         case (PC_JACOBI)
+            if (any(state_ptr % op % diag(:,1:state_ptr % nCellsSolve) <= 0.0_RKIND)) then
+               status = 3
+               return
+            end if
+            state_ptr % solver % z(:,1:state_ptr % nCellsSolve) = &
+               state_ptr % solver % r(:,1:state_ptr % nCellsSolve) / &
+               state_ptr % op % diag(:,1:state_ptr % nCellsSolve)
+         case default
+            status = 3
+            return
+         end select
+         state_ptr => state_ptr % next
+      end do
+
+      status = 1
+      apply_domain_preconditioner = .true.
+
+   end function apply_domain_preconditioner
+
+!***********************************************************************
+!
+!  routine finish_domain_pcg
+!
+!> \brief Copy the converged PCG solution to phi and record diagnostics
+!
+!-----------------------------------------------------------------------
+   subroutine finish_domain_pcg(domain, iter_count, r0, rfinal, status)
+
+      type(domain_type), intent(inout) :: domain
+      integer, intent(in) :: iter_count
+      real(kind=RKIND), intent(in) :: r0
+      real(kind=RKIND), intent(in) :: rfinal
+      integer, intent(in) :: status
+
+      type(block_type), pointer :: block_ptr
+      type(electrostatic_block_state), pointer :: state_ptr
+      type(mpas_pool_type), pointer :: es_pool
+      real(kind=RKIND), dimension(:,:), pointer :: phi
+
+      block_ptr => domain % blocklist
+      state_ptr => block_states
+      do while (associated(block_ptr) .and. associated(state_ptr))
+         call mpas_pool_get_subpool(block_ptr % structs, 'electrostatic', es_pool)
+         call mpas_pool_get_array(es_pool, 'phi', phi)
+         phi = 0.0_RKIND
+         phi(:,1:state_ptr % nCellsSolve) = state_ptr % x(:,1:state_ptr % nCellsSolve)
+         call set_solver_diagnostics(es_pool, iter_count, r0, rfinal)
+         block_ptr => block_ptr % next
+         state_ptr => state_ptr % next
+      end do
 
       if (status /= 0) then
          call mpas_log_write('Electrostatic PCG returned status $i after $i iterations; final residual = $r', &
                              messageType=MPAS_LOG_WARN, intArgs=(/status, iter_count/), realArgs=(/rfinal/))
       end if
 
-   end subroutine solve_block_potential
+   end subroutine finish_domain_pcg
+
+!***********************************************************************
+!
+!  routine domain_residual_norm
+!
+!> \brief Return a global relative residual norm
+!
+!-----------------------------------------------------------------------
+   real(kind=RKIND) function domain_residual_norm(vector_name, rhs_norm, domain)
+
+      character(len=*), intent(in) :: vector_name
+      real(kind=RKIND), intent(in) :: rhs_norm
+      type(domain_type), intent(in) :: domain
+
+      real(kind=RKIND) :: r_norm
+
+      r_norm = sqrt(domain_dot(vector_name, vector_name, domain))
+      if (rhs_norm > 0.0_RKIND) then
+         domain_residual_norm = r_norm / rhs_norm
+      else
+         domain_residual_norm = r_norm
+      end if
+
+   end function domain_residual_norm
+
+!***********************************************************************
+!
+!  routine domain_dot
+!
+!> \brief Return a global dot product over owned cells only
+!
+!-----------------------------------------------------------------------
+   real(kind=RKIND) function domain_dot(a_name, b_name, domain)
+
+      character(len=*), intent(in) :: a_name
+      character(len=*), intent(in) :: b_name
+      type(domain_type), intent(in) :: domain
+
+      type(electrostatic_block_state), pointer :: state_ptr
+      real(kind=RKIND) :: local_dot, global_dot
+
+      local_dot = 0.0_RKIND
+      state_ptr => block_states
+      do while (associated(state_ptr))
+         local_dot = local_dot + block_dot(state_ptr, a_name, b_name)
+         state_ptr => state_ptr % next
+      end do
+
+      call mpas_dmpar_sum_real(domain % dminfo, local_dot, global_dot)
+      domain_dot = global_dot
+
+   end function domain_dot
+
+!***********************************************************************
+!
+!  routine block_dot
+!
+!> \brief Return a block-local dot product over owned cells only
+!
+!-----------------------------------------------------------------------
+   real(kind=RKIND) function block_dot(state_ptr, a_name, b_name)
+
+      type(electrostatic_block_state), pointer, intent(in) :: state_ptr
+      character(len=*), intent(in) :: a_name
+      character(len=*), intent(in) :: b_name
+
+      select case (trim(a_name)//':'//trim(b_name))
+      case ('rhs:rhs')
+         block_dot = sum(state_ptr % rhs(:,1:state_ptr % nCellsSolve) * &
+                         state_ptr % rhs(:,1:state_ptr % nCellsSolve))
+      case ('r:r')
+         block_dot = sum(state_ptr % solver % r(:,1:state_ptr % nCellsSolve) * &
+                         state_ptr % solver % r(:,1:state_ptr % nCellsSolve))
+      case ('r:z')
+         block_dot = sum(state_ptr % solver % r(:,1:state_ptr % nCellsSolve) * &
+                         state_ptr % solver % z(:,1:state_ptr % nCellsSolve))
+      case ('p:Ap')
+         block_dot = sum(state_ptr % solver % p(:,1:state_ptr % nCellsSolve) * &
+                         state_ptr % solver % Ap(:,1:state_ptr % nCellsSolve))
+      case default
+         block_dot = 0.0_RKIND
+      end select
+
+   end function block_dot
 
 !***********************************************************************
 !

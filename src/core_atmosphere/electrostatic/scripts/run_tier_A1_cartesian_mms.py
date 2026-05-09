@@ -302,9 +302,20 @@ def scalar_diagnostic(dataset, name, default=math.nan):
     return array.flat[0].item()
 
 
-def infer_periods(x, y, zgrid):
-    x_period = float(np.max(x) - np.min(x))
-    y_period = float(np.max(y) - np.min(y))
+def positive_attr(dataset, name):
+    if name not in dataset.ncattrs():
+        return math.nan
+    value = float(dataset.getncattr(name))
+    return value if value > 0.0 else math.nan
+
+
+def infer_periods(dataset, x, y, zgrid):
+    x_period = positive_attr(dataset, "x_period")
+    y_period = positive_attr(dataset, "y_period")
+    if not math.isfinite(x_period):
+        x_period = float(np.max(x) - np.min(x))
+    if not math.isfinite(y_period):
+        y_period = float(np.max(y) - np.min(y))
     z_top = float(np.max(zgrid))
     return (
         x_period if x_period > 0.0 else 1.0,
@@ -328,7 +339,7 @@ def compute_errors(output_nc):
 
         zmid = 0.5 * (zgrid[:-1, :] + zgrid[1:, :])
         dz = zgrid[1:, :] - zgrid[:-1, :]
-        x_period, y_period, z_top = infer_periods(x, y, zgrid)
+        x_period, y_period, z_top = infer_periods(dataset, x, y, zgrid)
 
         exact = phi_exact(
             x[None, :],
