@@ -26,7 +26,9 @@ module mpas_electrostatic_driver
    use mpas_electrostatic_bcs, only : electrostatic_apply_ground_rhs, &
                                       electrostatic_compute_vertical_E
    use mpas_electrostatic_source, only : electrostatic_fill_mms_cart_source, &
-                                         electrostatic_fill_mms_cart_horizontal_source
+                                         electrostatic_fill_mms_cart_horizontal_source, &
+                                         electrostatic_fill_mms_sphere_source, &
+                                         electrostatic_fill_mms_sphere_horizontal_source
 
    implicit none
    private
@@ -54,6 +56,8 @@ module mpas_electrostatic_driver
       real(kind=RKIND) :: x_period = 1.0_RKIND
       real(kind=RKIND) :: y_period = 1.0_RKIND
       real(kind=RKIND) :: z_top = 1.0_RKIND
+      real(kind=RKIND) :: sphere_radius = 6371229.0_RKIND
+      real(kind=RKIND) :: horizontal_length_scale = 1.0_RKIND
       type(electrostatic_block_state), pointer :: next => null()
    end type electrostatic_block_state
 
@@ -88,7 +92,7 @@ contains
          allocate(new_state)
          nullify(new_state % next)
 
-         call init_block_state(block_ptr, new_state)
+         call init_block_state(block_ptr, new_state, domain % sphere_radius)
 
          if (.not. associated(block_states)) then
             block_states => new_state
@@ -188,10 +192,11 @@ contains
 !> \brief Initialize one block's electrostatic operator and PCG workspace
 !
 !-----------------------------------------------------------------------
-   subroutine init_block_state(block_ptr, state_ptr)
+   subroutine init_block_state(block_ptr, state_ptr, sphere_radius)
 
       type(block_type), pointer, intent(inout) :: block_ptr
       type(electrostatic_block_state), pointer, intent(inout) :: state_ptr
+      real(kind=RKIND), intent(in) :: sphere_radius
 
       type(mpas_pool_type), pointer :: mesh_pool, es_pool
       integer, pointer :: nCells_ptr, nEdges_ptr, nVertLevels_ptr, maxEdges_ptr
@@ -208,6 +213,7 @@ contains
       real(kind=RKIND), pointer :: tol
       real(kind=RKIND), pointer :: mesh_x_period, mesh_y_period
       real(kind=RKIND), allocatable :: dz(:)
+      real(kind=RKIND), allocatable :: areaMetric(:), dcMetric(:), dvMetric(:)
       logical, pointer :: is_periodic
       character(len=StrKIND), pointer :: pc_name
 
@@ -252,8 +258,16 @@ contains
       allocate(state_ptr % E_zonal(nVertLevels,nCells))
       allocate(state_ptr % E_meridional(nVertLevels,nCells))
       allocate(dz(nVertLevels))
+      allocate(areaMetric(nCells))
+      allocate(dcMetric(nEdges))
+      allocate(dvMetric(nEdges))
 
       call fill_z_geometry(nCells, nVertLevels, zgrid, state_ptr % zMid, dz)
+      if (sphere_radius > 0.0_RKIND) state_ptr % sphere_radius = sphere_radius
+      state_ptr % horizontal_length_scale = horizontal_metric_scale(nEdges, dcEdge, state_ptr % sphere_radius)
+      areaMetric = areaCell * state_ptr % horizontal_length_scale * state_ptr % horizontal_length_scale
+      dcMetric = dcEdge * state_ptr % horizontal_length_scale
+      dvMetric = dvEdge * state_ptr % horizontal_length_scale
       call infer_mms_periods(nCells, nVertLevels, xCell, yCell, zgrid, &
                              state_ptr % x_period, state_ptr % y_period, state_ptr % z_top)
       if (is_periodic) then
@@ -263,7 +277,7 @@ contains
 
       preconditioner = preconditioner_from_name(pc_name)
       call elliptic_operator_init(state_ptr % op, nCells, nEdges, nVertLevels, maxEdges, &
-                                  areaCell, dcEdge, dvEdge, nEdgesOnCell, cellsOnCell, &
+                                  areaMetric, dcMetric, dvMetric, nEdgesOnCell, cellsOnCell, &
                                   edgesOnCell, dz, epsilon0)
       call pcg_init(state_ptr % solver, nCells, nVertLevels, preconditioner, max(1, max_iter), tol)
 
@@ -287,6 +301,9 @@ contains
       call set_solver_diagnostics(es_pool, 0, 0.0_RKIND, 0.0_RKIND)
 
       deallocate(dz)
+      deallocate(areaMetric)
+      deallocate(dcMetric)
+      deallocate(dvMetric)
 
    end subroutine init_block_state
 
@@ -305,7 +322,7 @@ contains
       type(mpas_pool_type), pointer :: mesh_pool, es_pool
       integer, pointer :: nCells_ptr, nVertLevels_ptr
       integer :: nCells, nVertLevels
-      real(kind=RKIND), dimension(:), pointer :: xCell, yCell
+      real(kind=RKIND), dimension(:), pointer :: latCell, lonCell, xCell, yCell
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, rho_charge
       real(kind=RKIND), pointer :: phi_ground
@@ -321,6 +338,8 @@ contains
 
       call mpas_pool_get_array(mesh_pool, 'xCell', xCell)
       call mpas_pool_get_array(mesh_pool, 'yCell', yCell)
+      call mpas_pool_get_array(mesh_pool, 'latCell', latCell)
+      call mpas_pool_get_array(mesh_pool, 'lonCell', lonCell)
       call mpas_pool_get_array(mesh_pool, 'zgrid', zgrid)
       call mpas_pool_get_array(es_pool, 'phi', phi)
       call mpas_pool_get_array(es_pool, 'rho_charge', rho_charge)
@@ -341,6 +360,18 @@ contains
                                                             state_ptr % op % v_weight_upper, &
                                                             state_ptr % op % v_weight_lower, &
                                                             state_ptr % op % volume, rho_charge)
+      case ('mms_sphere')
+         call electrostatic_fill_mms_sphere_source(nCells, nVertLevels, latCell, lonCell, &
+                                                   state_ptr % zMid, epsilon0, &
+                                                   state_ptr % sphere_radius, state_ptr % z_top, &
+                                                   rho_charge)
+      case ('mms_sphere_horizontal')
+         call electrostatic_fill_mms_sphere_horizontal_source(nCells, nVertLevels, latCell, lonCell, &
+                                                              state_ptr % zMid, epsilon0, &
+                                                              state_ptr % sphere_radius, state_ptr % z_top, &
+                                                              state_ptr % op % v_weight_upper, &
+                                                              state_ptr % op % v_weight_lower, &
+                                                              state_ptr % op % volume, rho_charge)
       case default
          call electrostatic_fill_mms_cart_source(nCells, nVertLevels, xCell, yCell, state_ptr % zMid, &
                                                  epsilon0, state_ptr % x_period, state_ptr % y_period, &
@@ -733,7 +764,8 @@ contains
       call mpas_pool_get_array(es_pool, 'E_vector', E_vector)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_bc_ground', phi_ground)
 
-      call compute_edge_normal_E(nEdges, nVertLevels, cellsOnEdge, dcEdge, phi, E_normal)
+      call compute_edge_normal_E(nEdges, nVertLevels, cellsOnEdge, dcEdge, &
+                                 state_ptr % horizontal_length_scale, phi, E_normal)
 
       call mpas_reconstruct(mesh_pool, E_normal, state_ptr % E_x, state_ptr % E_y, state_ptr % E_z, &
                             state_ptr % E_zonal, state_ptr % E_meridional, includeHalos=.true.)
@@ -762,30 +794,56 @@ contains
 !> \brief Compute lateral edge-normal E from cell-centered potential
 !
 !-----------------------------------------------------------------------
-   subroutine compute_edge_normal_E(nEdges, nVertLevels, cellsOnEdge, dcEdge, phi, E_normal)
+   subroutine compute_edge_normal_E(nEdges, nVertLevels, cellsOnEdge, dcEdge, length_scale, phi, E_normal)
 
       integer, intent(in) :: nEdges
       integer, intent(in) :: nVertLevels
       integer, dimension(2,nEdges), intent(in) :: cellsOnEdge
       real(kind=RKIND), dimension(nEdges), intent(in) :: dcEdge
+      real(kind=RKIND), intent(in) :: length_scale
       real(kind=RKIND), dimension(nVertLevels,*), intent(in) :: phi
       real(kind=RKIND), dimension(nVertLevels,nEdges), intent(out) :: E_normal
 
       integer :: iEdge, cell1, cell2, k
+      real(kind=RKIND) :: dcMetric
 
       E_normal = 0.0_RKIND
 
       do iEdge = 1, nEdges
          cell1 = cellsOnEdge(1,iEdge)
          cell2 = cellsOnEdge(2,iEdge)
-         if (cell1 > 0 .and. cell2 > 0 .and. dcEdge(iEdge) > 0.0_RKIND) then
+         dcMetric = dcEdge(iEdge) * length_scale
+         if (cell1 > 0 .and. cell2 > 0 .and. dcMetric > 0.0_RKIND) then
             do k = 1, nVertLevels
-               E_normal(k,iEdge) = -(phi(k,cell2) - phi(k,cell1)) / dcEdge(iEdge)
+               E_normal(k,iEdge) = -(phi(k,cell2) - phi(k,cell1)) / dcMetric
             end do
          end if
       end do
 
    end subroutine compute_edge_normal_E
+
+!***********************************************************************
+!
+!  routine horizontal_metric_scale
+!
+!> \brief Infer whether spherical horizontal mesh metrics are stored on a unit sphere
+!
+!-----------------------------------------------------------------------
+   real(kind=RKIND) function horizontal_metric_scale(nEdges, dcEdge, sphere_radius)
+
+      integer, intent(in) :: nEdges
+      real(kind=RKIND), dimension(nEdges), intent(in) :: dcEdge
+      real(kind=RKIND), intent(in) :: sphere_radius
+
+      horizontal_metric_scale = 1.0_RKIND
+
+      if (nEdges <= 0) return
+
+      if (sphere_radius > 1000.0_RKIND .and. maxval(abs(dcEdge(1:nEdges))) < 1000.0_RKIND) then
+         horizontal_metric_scale = sphere_radius
+      end if
+
+   end function horizontal_metric_scale
 
 !***********************************************************************
 !

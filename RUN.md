@@ -285,6 +285,44 @@ model executable, forces stream `io_type="netcdf"`, removes stale
 `output.nc` and MPAS logs before reruns, and writes all generated run
 artifacts outside the source tree.
 
+## Poisson Tier A.2 Spherical MMS
+
+The Tier A.2 helper prepares global spherical MMS runs under
+`~/Data/MPAS/poisson_tier_A2_scvt` or another run root. It supports the
+coupled 3D smoke source (`mms_sphere`) and a horizontal-isolated source
+(`mms_sphere_horizontal`) that uses the discrete vertical operator in the RHS.
+
+Official MPAS-A mesh bundles can be downloaded from the atmosphere mesh page
+and placed under `meshes/<mesh>/` with `grid.nc` and `graph.info`. Then run:
+
+```bash
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/scripts/setup_tier_A2_sphere_meshes.py \
+  --run-root ~/Data/MPAS/poisson_tier_A2_scvt \
+  --mesh-list 480km 240km 120km \
+  --ranks 8 \
+  --init-model ./init_atmosphere_model
+```
+
+Run the horizontal-isolated diagnostic sweep:
+
+```bash
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/scripts/run_tier_A2_sphere_mms.py \
+  --run-root ~/Data/MPAS/poisson_tier_A2_scvt \
+  --mesh-list 480km 240km 120km \
+  --ranks 8 \
+  --source mms_sphere_horizontal \
+  --model ./atmosphere_model \
+  --poisson-tol 1e-12 \
+  --residual-tol 1e-10
+```
+
+Current status: Tier A.2 run infrastructure is diagnostic. The official SCVT
+sequence has not yet met the formal second-order spherical MMS acceptance
+criterion, so use these commands for operator investigation rather than as a
+paper-grade convergence result.
+
 ## Test Case Data
 
 Idealized test case data is downloaded from

@@ -4,12 +4,16 @@ program test_mms_source
    use mpas_electrostatic_benchmarks, only : electrostatic_mms_cart_phi_exact, &
                                              electrostatic_compute_error_norms
    use mpas_electrostatic_source, only : electrostatic_fill_mms_cart_source, &
-                                         electrostatic_fill_mms_cart_horizontal_source
+                                         electrostatic_fill_mms_cart_horizontal_source, &
+                                         electrostatic_fill_mms_sphere_source, &
+                                         electrostatic_fill_mms_sphere_horizontal_source
 
    implicit none
 
    call test_mms_source_uses_sine_vertical_basis()
    call test_horizontal_mms_source_uses_discrete_vertical_operator()
+   call test_sphere_mms_source_uses_boundary_compatible_vertical_basis()
+   call test_sphere_horizontal_mms_source_uses_discrete_vertical_operator()
    call test_error_norms_are_relative_l2_and_absolute_linf()
    print *, "PASS: MMS source utility tests"
 
@@ -100,6 +104,76 @@ contains
       if (abs(rho_charge(2,1) - expected2) > 1.0e-20_RKIND) &
          stop "FAIL: horizontal MMS top-level source mismatch"
    end subroutine test_horizontal_mms_source_uses_discrete_vertical_operator
+
+   subroutine test_sphere_mms_source_uses_boundary_compatible_vertical_basis()
+      integer, parameter :: nCells = 1, nVertLevels = 1
+      real(kind=RKIND), parameter :: epsilon0 = 8.8541878128e-12_RKIND
+      real(kind=RKIND), parameter :: sphere_radius = 6371229.0_RKIND
+      real(kind=RKIND), parameter :: z_top = 20000.0_RKIND
+      real(kind=RKIND) :: latCell(nCells), lonCell(nCells), zMid(nVertLevels,nCells)
+      real(kind=RKIND) :: rho_charge(nVertLevels,nCells)
+      real(kind=RKIND) :: horizontal_eigenvalue, kz, phi_exact, y42, expected
+
+      latCell = [0.25_RKIND]
+      lonCell = [0.5_RKIND]
+      zMid(:,1) = [0.3_RKIND * z_top]
+
+      call electrostatic_fill_mms_sphere_source(nCells, nVertLevels, latCell, lonCell, zMid, &
+                                                epsilon0, sphere_radius, z_top, rho_charge)
+
+      y42 = cos(latCell(1))**2 * (7.0_RKIND * sin(latCell(1))**2 - 1.0_RKIND) * &
+            cos(2.0_RKIND * lonCell(1))
+      kz = 0.5_RKIND * acos(-1.0_RKIND) / z_top
+      horizontal_eigenvalue = 20.0_RKIND / (sphere_radius * sphere_radius)
+      phi_exact = y42 * sin(kz * zMid(1,1))
+      expected = epsilon0 * (horizontal_eigenvalue + kz*kz) * phi_exact
+
+      if (abs(rho_charge(1,1) - expected) > 1.0e-24_RKIND) &
+         stop "FAIL: spherical MMS source mismatch"
+   end subroutine test_sphere_mms_source_uses_boundary_compatible_vertical_basis
+
+   subroutine test_sphere_horizontal_mms_source_uses_discrete_vertical_operator()
+      integer, parameter :: nCells = 1, nVertLevels = 2
+      real(kind=RKIND), parameter :: epsilon0 = 8.8541878128e-12_RKIND
+      real(kind=RKIND), parameter :: sphere_radius = 6371229.0_RKIND
+      real(kind=RKIND), parameter :: z_top = 20000.0_RKIND
+      real(kind=RKIND) :: latCell(nCells), lonCell(nCells), zMid(nVertLevels,nCells)
+      real(kind=RKIND) :: rho_charge(nVertLevels,nCells)
+      real(kind=RKIND) :: v_weight_upper(nVertLevels,nCells)
+      real(kind=RKIND) :: v_weight_lower(nVertLevels,nCells)
+      real(kind=RKIND) :: volume(nVertLevels,nCells)
+      real(kind=RKIND) :: horizontal_coeff, phi1, phi2, y42, kz, expected1, expected2
+
+      latCell = [0.25_RKIND]
+      lonCell = [0.5_RKIND]
+      zMid(:,1) = [0.25_RKIND * z_top, 0.75_RKIND * z_top]
+      volume(:,1) = [2.0_RKIND, 3.0_RKIND]
+      v_weight_upper(:,1) = [5.0_RKIND, 0.0_RKIND]
+      v_weight_lower(:,1) = [7.0_RKIND, 11.0_RKIND]
+
+      call electrostatic_fill_mms_sphere_horizontal_source(nCells, nVertLevels, latCell, lonCell, &
+                                                           zMid, epsilon0, sphere_radius, z_top, &
+                                                           v_weight_upper, v_weight_lower, volume, &
+                                                           rho_charge)
+
+      y42 = cos(latCell(1))**2 * (7.0_RKIND * sin(latCell(1))**2 - 1.0_RKIND) * &
+            cos(2.0_RKIND * lonCell(1))
+      kz = 0.5_RKIND * acos(-1.0_RKIND) / z_top
+      horizontal_coeff = epsilon0 * 20.0_RKIND / (sphere_radius * sphere_radius)
+      phi1 = y42 * sin(kz * zMid(1,1))
+      phi2 = y42 * sin(kz * zMid(2,1))
+
+      expected1 = horizontal_coeff * phi1 + &
+                  (v_weight_upper(1,1) * (phi1 - phi2) + &
+                   v_weight_lower(1,1) * phi1) / volume(1,1)
+      expected2 = horizontal_coeff * phi2 + &
+                  (v_weight_lower(2,1) * (phi2 - phi1)) / volume(2,1)
+
+      if (abs(rho_charge(1,1) - expected1) > 1.0e-24_RKIND) &
+         stop "FAIL: spherical horizontal MMS first-level source mismatch"
+      if (abs(rho_charge(2,1) - expected2) > 1.0e-24_RKIND) &
+         stop "FAIL: spherical horizontal MMS top-level source mismatch"
+   end subroutine test_sphere_horizontal_mms_source_uses_discrete_vertical_operator
 
    subroutine test_error_norms_are_relative_l2_and_absolute_linf()
       real(kind=RKIND) :: phi_exact(2,2), phi(2,2), volume(2,2)

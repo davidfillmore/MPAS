@@ -472,7 +472,7 @@
                      description="Maximum PCG iterations."/>
 
                 <nml_option name="config_electrostatic_source" type="character" default_value="mms_cart"
-                     possible_values="mms_cart,mms_cart_horizontal,external"
+                     possible_values="mms_cart,mms_cart_horizontal,mms_sphere,mms_sphere_horizontal,external"
                      description="Charge-density source for Phase 1A."/>
 
                 <nml_option name="config_electrostatic_bc_ground" type="real" default_value="0.0"
