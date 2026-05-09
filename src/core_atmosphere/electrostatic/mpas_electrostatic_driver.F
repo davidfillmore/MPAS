@@ -25,7 +25,8 @@ module mpas_electrostatic_driver
    use mpas_pcg_solver, only : mpas_pcg_solver_type, pcg_init, PC_NONE, PC_JACOBI
    use mpas_electrostatic_bcs, only : electrostatic_apply_ground_rhs, &
                                       electrostatic_compute_vertical_E
-   use mpas_electrostatic_source, only : electrostatic_fill_mms_cart_source
+   use mpas_electrostatic_source, only : electrostatic_fill_mms_cart_source, &
+                                         electrostatic_fill_mms_cart_horizontal_source
 
    implicit none
    private
@@ -329,11 +330,22 @@ contains
 
       call fill_z_mid(nCells, nVertLevels, zgrid, state_ptr % zMid)
 
-      if (trim(source_name) /= 'external') then
+      select case (trim(source_name))
+      case ('external')
+         continue
+      case ('mms_cart_horizontal')
+         call electrostatic_fill_mms_cart_horizontal_source(nCells, nVertLevels, xCell, yCell, &
+                                                            state_ptr % zMid, epsilon0, &
+                                                            state_ptr % x_period, state_ptr % y_period, &
+                                                            state_ptr % z_top, &
+                                                            state_ptr % op % v_weight_upper, &
+                                                            state_ptr % op % v_weight_lower, &
+                                                            state_ptr % op % volume, rho_charge)
+      case default
          call electrostatic_fill_mms_cart_source(nCells, nVertLevels, xCell, yCell, state_ptr % zMid, &
                                                  epsilon0, state_ptr % x_period, state_ptr % y_period, &
                                                  state_ptr % z_top, rho_charge)
-      end if
+      end select
 
       state_ptr % rhs = rho_charge * state_ptr % op % volume
 

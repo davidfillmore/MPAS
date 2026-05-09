@@ -34,6 +34,8 @@ ELECTROSTATIC_CONFIG = (
     ("config_electrostatic_bc_ground", "0.0"),
 )
 
+ELECTROSTATIC_SOURCES = ("mms_cart", "mms_cart_horizontal")
+
 REQUIRED_OUTPUT_FIELDS = (
     "xCell",
     "yCell",
@@ -76,10 +78,18 @@ def mesh_spacing_m(mesh_name):
     return math.nan
 
 
-def configure_namelist_text(text):
+def electrostatic_config(source):
+    """Return electrostatic namelist settings for the requested MMS source."""
+    return tuple(
+        (key, f"'{source}'") if key == "config_electrostatic_source" else (key, value)
+        for key, value in ELECTROSTATIC_CONFIG
+    )
+
+
+def configure_namelist_text(text, source="mms_cart"):
     """Return namelist text configured for the zero-duration MMS solve."""
     text = set_namelist_value(text, "nhyd_model", "config_run_duration", "'00_00:00:00'")
-    return replace_namelist_block(text, "electrostatic", ELECTROSTATIC_CONFIG)
+    return replace_namelist_block(text, "electrostatic", electrostatic_config(source))
 
 
 def set_namelist_value(text, block_name, key, value):
@@ -153,8 +163,8 @@ def ensure_output_stream_list(stream_list_path):
     stream_list_path.write_text("\n".join(lines).rstrip() + "\n")
 
 
-def configure_namelist(path):
-    path.write_text(configure_namelist_text(path.read_text()))
+def configure_namelist(path, source):
+    path.write_text(configure_namelist_text(path.read_text(), source=source))
 
 
 def seed_run_dir_from_mesh_bundle(mesh_dir, run_dir):
@@ -212,7 +222,7 @@ def find_partition_file(run_dir, ranks, namelist_text):
     )
 
 
-def prepare_run_dir(run_root, mesh_name, ranks, model):
+def prepare_run_dir(run_root, mesh_name, ranks, model, source):
     """Create and configure the run directory for one mesh."""
     run_dir = run_root / "runs" / mesh_name
     mesh_dir = run_root / "meshes" / mesh_name
@@ -230,7 +240,7 @@ def prepare_run_dir(run_root, mesh_name, ranks, model):
             f"place them there or in {mesh_dir}"
         )
 
-    configure_namelist(namelist)
+    configure_namelist(namelist, source)
     ensure_streams_netcdf(streams)
     ensure_output_stream_list(run_dir / "stream_list.atmosphere.output")
 
@@ -370,10 +380,18 @@ def compute_errors(output_nc):
         }
 
 
-def write_csv(rows, results_dir):
-    csv_path = results_dir / "tier_A1_convergence.csv"
+def result_stem(source):
+    """Return result-file stem for a source mode."""
+    if source == "mms_cart":
+        return "tier_A1_convergence"
+    return f"tier_A1_{source}_convergence"
+
+
+def write_csv(rows, results_dir, source):
+    csv_path = results_dir / f"{result_stem(source)}.csv"
     fieldnames = (
         "mesh",
+        "source",
         "h_m",
         "ranks",
         "nCells",
@@ -412,7 +430,7 @@ def convergence_slope(rows, error_key):
     )
 
 
-def write_plot(rows, results_dir, l2_slope, linf_slope):
+def write_plot(rows, results_dir, source, l2_slope, linf_slope):
     usable = [
         row
         for row in rows
@@ -438,11 +456,14 @@ def write_plot(rows, results_dir, l2_slope, linf_slope):
     ax.loglog(h_ref, l2[-1] * (h_ref / h[-1]) ** 2, "k--", label="2nd order")
     ax.set_xlabel("h (m)")
     ax.set_ylabel("relative error")
-    ax.set_title("Tier A.1 Cartesian MMS convergence")
+    title = "Tier A.1 Cartesian MMS convergence"
+    if source != "mms_cart":
+        title = f"{title} ({source})"
+    ax.set_title(title)
     ax.legend()
     ax.grid(True, which="both", linestyle=":", linewidth=0.5)
 
-    plot_path = results_dir / "tier_A1_convergence.png"
+    plot_path = results_dir / f"{result_stem(source)}.png"
     fig.savefig(plot_path, bbox_inches="tight", dpi=180)
     plt.close(fig)
     return plot_path
@@ -455,7 +476,7 @@ def build_rows(args):
     rows = []
 
     for mesh_name in args.mesh_list:
-        run_dir, partition = prepare_run_dir(run_root, mesh_name, args.ranks, model)
+        run_dir, partition = prepare_run_dir(run_root, mesh_name, args.ranks, model, args.source)
         print(f"{mesh_name}: using {partition.name} with {args.ranks} ranks")
 
         if args.prepare_only:
@@ -471,6 +492,7 @@ def build_rows(args):
         result = compute_errors(output)
         row = {
             "mesh": mesh_name,
+            "source": args.source,
             "h_m": mesh_spacing_m(mesh_name),
             "ranks": args.ranks,
             "run_dir": str(run_dir),
@@ -509,6 +531,16 @@ def parse_args(argv=None):
     )
     parser.add_argument("--mpiexec", default="mpiexec", help="MPI launcher executable.")
     parser.add_argument(
+        "--source",
+        choices=ELECTROSTATIC_SOURCES,
+        default="mms_cart",
+        help=(
+            "MMS source mode. mms_cart is the coupled 3D smoke test; "
+            "mms_cart_horizontal uses the discrete vertical operator in the RHS "
+            "to isolate horizontal truncation error."
+        ),
+    )
+    parser.add_argument(
         "--analysis-only",
         action="store_true",
         help="Skip MPAS execution and analyze existing output.nc files.",
@@ -534,10 +566,10 @@ def main(argv=None):
         print(f"Prepared {len(args.mesh_list)} run directories under {args.run_root.expanduser()}")
         return 0
 
-    csv_path = write_csv(rows, results_dir)
+    csv_path = write_csv(rows, results_dir, args.source)
     l2_slope = convergence_slope(rows, "l2")
     linf_slope = convergence_slope(rows, "linf")
-    plot_path = write_plot(rows, results_dir, l2_slope, linf_slope)
+    plot_path = write_plot(rows, results_dir, args.source, l2_slope, linf_slope)
 
     print(f"Wrote {csv_path}")
     if plot_path is not None:

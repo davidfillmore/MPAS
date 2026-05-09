@@ -21,6 +21,7 @@ module mpas_electrostatic_source
    save
 
    public :: electrostatic_fill_mms_cart_source
+   public :: electrostatic_fill_mms_cart_horizontal_source
 
 contains
 
@@ -62,5 +63,69 @@ contains
       end do
 
    end subroutine electrostatic_fill_mms_cart_source
+
+!***********************************************************************
+!
+!  routine electrostatic_fill_mms_cart_horizontal_source
+!
+!> \brief Fill a Cartesian MMS source that isolates horizontal truncation error
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_fill_mms_cart_horizontal_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                            epsilon0, x_period, y_period, z_top, &
+                                                            v_weight_upper, v_weight_lower, volume, &
+                                                            rho_charge)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nCells), intent(in) :: xCell
+      real(kind=RKIND), dimension(nCells), intent(in) :: yCell
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMid
+      real(kind=RKIND), intent(in) :: epsilon0
+      real(kind=RKIND), intent(in) :: x_period
+      real(kind=RKIND), intent(in) :: y_period
+      real(kind=RKIND), intent(in) :: z_top
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: v_weight_upper
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: v_weight_lower
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: volume
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: rho_charge
+
+      integer :: iCell, k
+      real(kind=RKIND) :: horizontal_coeff, kx, ky, kz, phi_here, phi_lower, phi_upper, pi
+      real(kind=RKIND) :: vertical_rhs
+
+      pi = acos(-1.0_RKIND)
+      kx = 2.0_RKIND * pi / x_period
+      ky = 2.0_RKIND * pi / y_period
+      kz = 0.5_RKIND * pi / z_top
+      horizontal_coeff = epsilon0 * (kx*kx + ky*ky)
+
+      do iCell = 1, nCells
+         do k = 1, nVertLevels
+            phi_here = sin(kx*xCell(iCell)) * sin(ky*yCell(iCell)) * sin(kz*zMid(k,iCell))
+
+            if (k < nVertLevels) then
+               phi_upper = sin(kx*xCell(iCell)) * sin(ky*yCell(iCell)) * sin(kz*zMid(k+1,iCell))
+            else
+               phi_upper = phi_here
+            end if
+
+            if (k > 1) then
+               phi_lower = sin(kx*xCell(iCell)) * sin(ky*yCell(iCell)) * sin(kz*zMid(k-1,iCell))
+            else
+               phi_lower = 0.0_RKIND
+            end if
+
+            vertical_rhs = 0.0_RKIND
+            if (k < nVertLevels) then
+               vertical_rhs = vertical_rhs + v_weight_upper(k,iCell) * (phi_here - phi_upper)
+            end if
+            vertical_rhs = vertical_rhs + v_weight_lower(k,iCell) * (phi_here - phi_lower)
+
+            rho_charge(k,iCell) = horizontal_coeff * phi_here + vertical_rhs / volume(k,iCell)
+         end do
+      end do
+
+   end subroutine electrostatic_fill_mms_cart_horizontal_source
 
 end module mpas_electrostatic_source

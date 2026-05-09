@@ -165,6 +165,19 @@ class TierA1ScriptTests(unittest.TestCase):
         self.assertEqual(result["x_period"], 4.0)
         self.assertEqual(result["y_period"], 5.0)
 
+    def test_namelist_source_can_select_horizontal_mms(self):
+        script = load_script()
+
+        namelist = """&nhyd_model
+/
+"""
+        updated = script.configure_namelist_text(
+            namelist,
+            source="mms_cart_horizontal",
+        )
+
+        self.assertIn("config_electrostatic_source = 'mms_cart_horizontal'", updated)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -287,6 +287,9 @@ described above, then reconfigure PIO with
 
 ```bash
 export PKG_CONFIG_PATH="$HOME/software/lib/pkgconfig:$PKG_CONFIG_PATH"
+export OMPI_FC=flang
+export OMPI_CC=clang
+export OMPI_CXX=clang++
 
 make -j8 llvm \
   CORE=atmosphere \
@@ -303,6 +306,30 @@ make -j8 llvm \
   PIO=$HOME/software \
   NETCDF=/opt/homebrew \
   PNETCDF=$HOME/software \
+  PRECISION=double
+```
+
+### Poisson Electrostatics
+
+The Phase 1A diagnostic Poisson solver is built in-tree with MPAS-A. It has
+no external elliptic-solver dependency: the TRiSK-style operator, Jacobi PCG,
+MMS sources, and diagnostic E-field reconstruction live under
+`src/operators/` and `src/core_atmosphere/electrostatic/`.
+
+Build it with the normal atmosphere target. On the local macOS LLVM setup, use
+the clang/flang wrapper environment shown above:
+
+```bash
+export PKG_CONFIG_PATH="$HOME/software/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+export OMPI_FC=flang
+export OMPI_CC=clang
+export OMPI_CXX=clang++
+
+make -j8 llvm \
+  CORE=atmosphere \
+  PIO="$HOME/software" \
+  NETCDF=/opt/homebrew \
+  PNETCDF="$HOME/software" \
   PRECISION=double
 ```
 
