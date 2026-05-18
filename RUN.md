@@ -310,7 +310,7 @@ Run the horizontal-isolated diagnostic sweep:
 ~/miniconda3/envs/mpas/bin/python \
   src/core_atmosphere/electrostatic/scripts/run_tier_A2_sphere_mms.py \
   --run-root ~/Data/MPAS/poisson_tier_A2_scvt \
-  --mesh-list 480km 240km 120km \
+  --mesh-list 480km 240km 120km 60km \
   --ranks 8 \
   --source mms_sphere_horizontal \
   --model ./atmosphere_model \
@@ -318,10 +318,17 @@ Run the horizontal-isolated diagnostic sweep:
   --residual-tol 1e-10
 ```
 
-Current status: Tier A.2 run infrastructure is diagnostic. The official SCVT
-sequence has not yet met the formal second-order spherical MMS acceptance
-criterion, so use these commands for operator investigation rather than as a
-paper-grade convergence result.
+Current status: Tier A.2 is accepted for Phase 1 as a characterized spherical
+MMS gate for the current SPD two-point operator. The official SCVT sequence is
+globally defect-limited by the pentagon neighborhoods (`L2 = 1.380`,
+`Linf = 0.253` finest-pair slopes in the horizontal-isolated solution), while
+defect-ring exclusion diagnostics show near-second-order behavior in the
+regular hexagonal region. Report both the global errors and the exclusion
+diagnostic; the exclusion diagnostic explains the error source and does not
+replace the global norm. The local 60 km result used a synthetic `init.nc`
+workaround after local `init_atmosphere_model` failures, so paper-grade reruns
+should either reproduce that setup explicitly or document a different 60 km
+initialization path.
 
 ### Tier A.2 Defect-Correction Prototype
 
@@ -367,7 +374,11 @@ Run the local-LSQ fallback demonstration:
 Current interpretation: positive shared edge-factor retuning is insufficient
 for the A.2 global convergence loss. The local-LSQ path restores global L2 in
 the prototype, but is not a production correction because it changes the
-operator class.
+operator class. The documented way forward is a deliberately designed
+mimetic/multi-point defect correction, gated first by an operator-only
+spherical-harmonic residual test that fails for the current two-point operator
+and passes for the corrected stencil before any production Fortran path is
+changed.
 
 ## Test Case Data
 
