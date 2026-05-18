@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import pathlib
 import re
 import shutil
@@ -232,43 +231,6 @@ def _broadcast_cell_coordinates(fields):
     return x, y
 
 
-def _rho_relative_error(fields, source, charge, sigma, separation, center):
-    x, y = _broadcast_cell_coordinates(fields)
-    candidate = analytic.evaluate_gaussian_source(
-        source,
-        x,
-        y,
-        fields["zmid"],
-        center=center,
-        charge=charge,
-        sigma=sigma,
-        separation=separation,
-    )
-    diff = fields["rho"] - candidate.rho
-    numerator = float(np.sum(fields["volume"] * diff * diff))
-    denominator = float(np.sum(fields["volume"] * candidate.rho * candidate.rho))
-    return math.sqrt(numerator / denominator) if denominator > 0.0 else math.inf
-
-
-def _peak_inferred_center(fields, source, separation):
-    x, y = _broadcast_cell_coordinates(fields)
-    index = np.unravel_index(int(np.argmax(np.abs(fields["rho"]))), fields["rho"].shape)
-    center = [float(x[index]), float(y[index]), float(fields["zmid"][index])]
-    if source == "gaussian_dipole_y":
-        center[1] += math.copysign(0.5 * separation, fields["rho"][index])
-    elif source == "gaussian_dipole_z":
-        center[2] += math.copysign(0.5 * separation, fields["rho"][index])
-    return tuple(center)
-
-
-def infer_source_center(fields, source, charge, sigma, separation):
-    """Use the domain center unless the emitted source clearly says otherwise."""
-    center = analytic_center(fields)
-    if _rho_relative_error(fields, source, charge, sigma, separation, center) < 1.0e-6:
-        return center
-    return _peak_inferred_center(fields, source, separation)
-
-
 def analyze_output(
     output_nc,
     summary_path,
@@ -285,7 +247,7 @@ def analyze_output(
     """Analyze MPAS output against the matching free-space analytic source."""
     fields = read_fields(pathlib.Path(output_nc).expanduser())
     x, y = _broadcast_cell_coordinates(fields)
-    center = infer_source_center(fields, source, charge, sigma, separation)
+    center = analytic_center(fields)
     exact = analytic.evaluate_gaussian_source(
         source,
         x,

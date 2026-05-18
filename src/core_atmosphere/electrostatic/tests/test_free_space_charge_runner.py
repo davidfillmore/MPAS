@@ -147,6 +147,10 @@ class FreeSpaceChargeRunnerTests(unittest.TestCase):
             summary = tmp_path / "summary.json"
             plot = tmp_path / "plot.png"
             write_synthetic_gaussian_output(output, script)
+            self.assertEqual(
+                script.analytic_center(script.read_fields(output)),
+                (5000.0, 5000.0, 5000.0),
+            )
 
             result = script.analyze_output(
                 output,
@@ -171,11 +175,11 @@ class FreeSpaceChargeRunnerTests(unittest.TestCase):
 def write_synthetic_gaussian_output(path, script):
     analytic = script.analytic
     x = np.array([3000.0, 5000.0, 7000.0, 5000.0])
-    y = np.array([5000.0, 5000.0, 5000.0, 7000.0])
+    y = np.array([3000.0, 5000.0, 7000.0, 5000.0])
     zgrid = np.array(
         [
-            [4000.0, 4000.0, 4000.0, 6000.0],
-            [6000.0, 6000.0, 6000.0, 8000.0],
+            [4000.0, 4000.0, 4000.0, 4000.0],
+            [6000.0, 6000.0, 6000.0, 6000.0],
         ]
     )
     zmid = 0.5 * (zgrid[0, :] + zgrid[1, :])
