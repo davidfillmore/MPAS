@@ -72,7 +72,7 @@ def configure_namelist_text(
     entries = tuple(
         (key, f"'{source}'")
         if key == "config_electrostatic_source"
-        else (key, f"{poisson_tol:.1e}")
+        else (key, str(poisson_tol))
         if key == "config_poisson_tol"
         else (key, str(poisson_max_iter))
         if key == "config_poisson_max_iter"
