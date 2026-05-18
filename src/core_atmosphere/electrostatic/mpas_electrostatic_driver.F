@@ -28,7 +28,8 @@ module mpas_electrostatic_driver
    use mpas_electrostatic_source, only : electrostatic_fill_mms_cart_source, &
                                          electrostatic_fill_mms_cart_horizontal_source, &
                                          electrostatic_fill_mms_sphere_source, &
-                                         electrostatic_fill_mms_sphere_horizontal_source
+                                         electrostatic_fill_mms_sphere_horizontal_source, &
+                                         electrostatic_fill_tripole_source
 
    implicit none
    private
@@ -372,6 +373,9 @@ contains
                                                               state_ptr % op % v_weight_upper, &
                                                               state_ptr % op % v_weight_lower, &
                                                               state_ptr % op % volume, rho_charge)
+      case ('tripole')
+         call electrostatic_fill_tripole_source(nCells, nVertLevels, xCell, yCell, &
+                                                state_ptr % zMid, rho_charge)
       case default
          call electrostatic_fill_mms_cart_source(nCells, nVertLevels, xCell, yCell, state_ptr % zMid, &
                                                  epsilon0, state_ptr % x_period, state_ptr % y_period, &

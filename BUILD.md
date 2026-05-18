@@ -342,6 +342,8 @@ Focused Python helper checks are also available without building MPAS-A:
   src/core_atmosphere/electrostatic/tests/test_tier_A2_script.py
 ~/miniconda3/envs/mpas/bin/python \
   src/core_atmosphere/electrostatic/tests/test_tier_A2_defect_correction.py
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/tests/test_tripole_supercell_script.py
 ```
 
 On the local macOS host, the `mpas` conda environment supplies Python packages
@@ -353,6 +355,9 @@ build. On the local macOS LLVM tree, do not run the standalone test Makefile
 with a gfortran-backed wrapper against flang-built `.mod` files. Use:
 
 ```bash
+OMPI_FC=flang OMPI_CC=clang OMPI_CXX=clang++ \
+  make -C src/core_atmosphere/electrostatic mpas_electrostatic_source.o
+
 OMPI_FC=flang OMPI_CC=clang OMPI_CXX=clang++ \
   make -C src/core_atmosphere/electrostatic/tests FC=mpifort test_mms_source
 
@@ -367,9 +372,9 @@ between compiler families.
 
 GitHub Actions runs these Python helper checks on changes to the
 electrostatic scripts/tests and Poisson documentation. The CI job installs
-only `netCDF4`, `numpy`, and `scipy`; full MPAS-A builds and mesh-generation
-runs remain local/manual because they depend on the clang/flang MPI stack,
-PIO, PnetCDF, and test mesh bundles.
+only `matplotlib`, `netCDF4`, `numpy`, and `scipy`; full MPAS-A builds and
+mesh-generation runs remain local/manual because they depend on the
+clang/flang MPI stack, PIO, PnetCDF, and test mesh bundles.
 
 #### LLVM Build Technical Details
 

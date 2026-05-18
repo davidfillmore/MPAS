@@ -30,6 +30,9 @@ make -j4 llvm CORE=atmosphere PIO="$HOME/software" NETCDF=/opt/homebrew PNETCDF=
 
 ```bash
 OMPI_FC=flang OMPI_CC=clang OMPI_CXX=clang++ \
+  make -C src/core_atmosphere/electrostatic mpas_electrostatic_source.o
+
+OMPI_FC=flang OMPI_CC=clang OMPI_CXX=clang++ \
   make -C src/core_atmosphere/electrostatic/tests FC=mpifort test_mms_source
 ```
 
@@ -37,3 +40,6 @@ OMPI_FC=flang OMPI_CC=clang OMPI_CXX=clang++ \
 
 - Generated MPAS run artifacts, logs, NetCDF output, and plots belong under `~/Data/MPAS/`, not in this repository.
 - On the local macOS PIO build, every MPAS stream used in multi-rank runs should set `io_type="netcdf"` explicitly.
+- The synthetic tripole supercell runner is
+  `src/core_atmosphere/electrostatic/scripts/run_tripole_supercell.py`; its
+  default output root is `~/Data/MPAS/poisson_tripole_supercell/`.

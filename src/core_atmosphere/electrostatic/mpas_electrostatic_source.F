@@ -24,6 +24,7 @@ module mpas_electrostatic_source
    public :: electrostatic_fill_mms_cart_horizontal_source
    public :: electrostatic_fill_mms_sphere_source
    public :: electrostatic_fill_mms_sphere_horizontal_source
+   public :: electrostatic_fill_tripole_source
 
 contains
 
@@ -224,6 +225,51 @@ contains
       end do
 
    end subroutine electrostatic_fill_mms_sphere_horizontal_source
+
+!***********************************************************************
+!
+!  routine electrostatic_fill_tripole_source
+!
+!> \brief Fill a neutral synthetic thundercloud tripole charge density
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_fill_tripole_source(nCells, nVertLevels, xCell, yCell, zMid, rho_charge)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nCells), intent(in) :: xCell
+      real(kind=RKIND), dimension(nCells), intent(in) :: yCell
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMid
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: rho_charge
+
+      integer :: iCell, k, lobe
+      real(kind=RKIND), parameter :: sigma_h = 8000.0_RKIND
+      real(kind=RKIND), parameter :: sigma_v = 1500.0_RKIND
+      real(kind=RKIND), dimension(3), parameter :: q_lobe = [20.0_RKIND, -40.0_RKIND, 20.0_RKIND]
+      real(kind=RKIND), dimension(3), parameter :: z_lobe = [4000.0_RKIND, 7000.0_RKIND, 10000.0_RKIND]
+      real(kind=RKIND) :: amp, dx2, dy2, dz2, horizontal_factor, norm, pi, x0, y0
+
+      pi = acos(-1.0_RKIND)
+      x0 = 0.5_RKIND * (minval(xCell) + maxval(xCell))
+      y0 = 0.5_RKIND * (minval(yCell) + maxval(yCell))
+      norm = (2.0_RKIND * pi)**1.5_RKIND * sigma_h * sigma_h * sigma_v
+
+      rho_charge = 0.0_RKIND
+      do iCell = 1, nCells
+         dx2 = (xCell(iCell) - x0)**2
+         dy2 = (yCell(iCell) - y0)**2
+         horizontal_factor = exp(-(dx2 + dy2) / (2.0_RKIND * sigma_h * sigma_h))
+         do k = 1, nVertLevels
+            do lobe = 1, 3
+               dz2 = (zMid(k,iCell) - z_lobe(lobe))**2
+               amp = q_lobe(lobe) / norm
+               rho_charge(k,iCell) = rho_charge(k,iCell) + amp * horizontal_factor * &
+                                      exp(-dz2 / (2.0_RKIND * sigma_v * sigma_v))
+            end do
+         end do
+      end do
+
+   end subroutine electrostatic_fill_tripole_source
 
 !***********************************************************************
 !
