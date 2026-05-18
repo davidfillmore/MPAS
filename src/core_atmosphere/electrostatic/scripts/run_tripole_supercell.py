@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Synthetic thundercloud tripole runner for MPAS electrostatics.
+Synthetic thundercloud charge-source runner for MPAS electrostatics.
 
 The script prepares an isolated zero-duration supercell-mesh run, enables the
-diagnostic electrostatic Poisson solve with config_electrostatic_source =
-'tripole', and plots rho_charge, phi, and |E| from output.nc.
+diagnostic electrostatic Poisson solve with a synthetic source, and plots
+rho_charge, phi, and |E| from output.nc.
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ if str(SCRIPT_DIR) not in sys.path:
 
 import run_tier_A1_cartesian_mms as tier_a1  # noqa: E402
 
+
+SOURCES = ("tripole", "dipole")
 
 ELECTROSTATIC_CONFIG = (
     ("config_electrostatic_enable", ".true."),
@@ -60,8 +62,11 @@ STALE_PATTERNS = (
 )
 
 
-def configure_namelist_text(text, poisson_tol=1.0e-10, poisson_max_iter=5000):
-    """Return namelist text configured for a zero-duration tripole solve."""
+def configure_namelist_text(text, source="tripole", poisson_tol=1.0e-10, poisson_max_iter=5000):
+    """Return namelist text configured for a zero-duration synthetic solve."""
+    if source not in SOURCES:
+        raise ValueError(f"unsupported electrostatic source: {source}")
+
     text = tier_a1.set_namelist_value(
         text,
         "nhyd_model",
@@ -73,6 +78,8 @@ def configure_namelist_text(text, poisson_tol=1.0e-10, poisson_max_iter=5000):
         if key == "config_poisson_tol"
         else (key, str(poisson_max_iter))
         if key == "config_poisson_max_iter"
+        else (key, f"'{source}'")
+        if key == "config_electrostatic_source"
         else (key, value)
         for key, value in ELECTROSTATIC_CONFIG
     )
@@ -81,11 +88,12 @@ def configure_namelist_text(text, poisson_tol=1.0e-10, poisson_max_iter=5000):
     return text.rstrip() + "\n"
 
 
-def configure_namelist(path, poisson_tol, poisson_max_iter):
+def configure_namelist(path, source, poisson_tol, poisson_max_iter):
     """Configure namelist.atmosphere in place."""
     path.write_text(
         configure_namelist_text(
             path.read_text(),
+            source=source,
             poisson_tol=poisson_tol,
             poisson_max_iter=poisson_max_iter,
         )
@@ -154,10 +162,11 @@ def prepare_run_dir(
     run_dir,
     model,
     ranks,
+    source="tripole",
     poisson_tol=1.0e-10,
     poisson_max_iter=5000,
 ):
-    """Create and configure the isolated tripole run directory."""
+    """Create and configure the isolated synthetic-source run directory."""
     run_dir = run_dir.expanduser().resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir.parent / "results").mkdir(parents=True, exist_ok=True)
@@ -173,7 +182,7 @@ def prepare_run_dir(
             f"seed it from a complete supercell run directory"
         )
 
-    configure_namelist(namelist, poisson_tol, poisson_max_iter)
+    configure_namelist(namelist, source, poisson_tol, poisson_max_iter)
     tier_a1.ensure_streams_netcdf(streams)
     ensure_output_stream_list(run_dir / "stream_list.atmosphere.output")
 
@@ -501,6 +510,12 @@ def remove_stale_outputs(run_dir):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--source",
+        choices=SOURCES,
+        default="tripole",
+        help="Synthetic source mode to write to config_electrostatic_source.",
+    )
+    parser.add_argument(
         "--template-run-dir",
         type=pathlib.Path,
         default=pathlib.Path("~/Data/MPAS/supercell"),
@@ -509,8 +524,8 @@ def parse_args(argv=None):
     parser.add_argument(
         "--run-dir",
         type=pathlib.Path,
-        default=pathlib.Path("~/Data/MPAS/poisson_tripole_supercell/run"),
-        help="Isolated tripole run directory to create or reuse.",
+        default=None,
+        help="Isolated run directory to create or reuse.",
     )
     parser.add_argument(
         "--model",
@@ -524,7 +539,7 @@ def parse_args(argv=None):
         "--plot",
         type=pathlib.Path,
         default=None,
-        help="Output PNG path. Defaults to run-dir/../results/tripole_supercell.png.",
+        help="Output PNG path. Defaults to run-dir/../results/<source>_supercell.png.",
     )
     parser.add_argument(
         "--analysis-only",
@@ -554,7 +569,12 @@ def parse_args(argv=None):
         default=1.0e-8,
         help="Maximum accepted final PCG residual when the diagnostic is present.",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.run_dir is None:
+        args.run_dir = pathlib.Path(f"~/Data/MPAS/poisson_{args.source}_supercell/run")
+    if args.plot is None:
+        args.plot = args.run_dir.parent / "results" / f"{args.source}_supercell.png"
+    return args
 
 
 def main(argv=None):
@@ -564,6 +584,7 @@ def main(argv=None):
         args.run_dir,
         args.model,
         args.ranks,
+        source=args.source,
         poisson_tol=args.poisson_tol,
         poisson_max_iter=args.poisson_max_iter,
     )
@@ -577,10 +598,7 @@ def main(argv=None):
         remove_stale_outputs(run_dir)
         tier_a1.run_mpas(run_dir, args.ranks, args.mpiexec)
 
-    plot_path = args.plot
-    if plot_path is None:
-        plot_path = run_dir.parent / "results" / "tripole_supercell.png"
-    analyze_output(run_dir, plot_path, args.residual_tol)
+    analyze_output(run_dir, args.plot, args.residual_tol)
     return 0
 
 

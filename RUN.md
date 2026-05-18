@@ -380,13 +380,13 @@ spherical-harmonic residual test that fails for the current two-point operator
 and passes for the corrected stencil before any production Fortran path is
 changed.
 
-## Poisson Synthetic Tripole Supercell
+## Poisson Synthetic Charge-Source Supercell
 
-The synthetic tripole helper prepares a zero-duration supercell-mesh
-electrostatic solve under `~/Data/MPAS/poisson_tripole_supercell/`. It seeds
-inputs from the existing `~/Data/MPAS/supercell` case, enables
-`config_electrostatic_source = 'tripole'`, runs one solve at initialization,
-and plots `rho_charge`, `phi`, and `|E|`.
+The synthetic charge-source helper prepares a zero-duration supercell-mesh
+electrostatic solve under `~/Data/MPAS/poisson_<source>_supercell/`. It seeds
+inputs from the existing `~/Data/MPAS/supercell` case, enables a synthetic
+`config_electrostatic_source`, runs one solve at initialization, and plots
+`rho_charge`, `phi`, and `|E|`.
 
 Prepare the isolated run directory without running MPAS:
 
@@ -394,8 +394,8 @@ Prepare the isolated run directory without running MPAS:
 ~/miniconda3/envs/mpas/bin/python \
   src/core_atmosphere/electrostatic/scripts/run_tripole_supercell.py \
   --prepare-only \
+  --source tripole \
   --template-run-dir ~/Data/MPAS/supercell \
-  --run-dir ~/Data/MPAS/poisson_tripole_supercell/run \
   --ranks 8 \
   --model ./atmosphere_model
 ```
@@ -405,8 +405,8 @@ Run the zero-duration solve and write the plot:
 ```bash
 ~/miniconda3/envs/mpas/bin/python \
   src/core_atmosphere/electrostatic/scripts/run_tripole_supercell.py \
+  --source tripole \
   --template-run-dir ~/Data/MPAS/supercell \
-  --run-dir ~/Data/MPAS/poisson_tripole_supercell/run \
   --ranks 8 \
   --model ./atmosphere_model
 ```
@@ -415,6 +415,13 @@ Outputs are `~/Data/MPAS/poisson_tripole_supercell/run/output.nc`,
 `~/Data/MPAS/poisson_tripole_supercell/run/run.out`, and
 `~/Data/MPAS/poisson_tripole_supercell/results/tripole_supercell.png`.
 Use `--analysis-only` to regenerate the plot from an existing `output.nc`.
+Use `--source dipole` for the simpler lower-positive/upper-negative dipole;
+the default output paths become
+`~/Data/MPAS/poisson_dipole_supercell/run/output.nc` and
+`~/Data/MPAS/poisson_dipole_supercell/results/dipole_supercell.png`.
+The synthetic dipole and tripole centers are computed once from the owned-cell
+mesh extent across the full MPI domain, so decomposed runs do not duplicate the
+source around block-local centers.
 
 ## Test Case Data
 

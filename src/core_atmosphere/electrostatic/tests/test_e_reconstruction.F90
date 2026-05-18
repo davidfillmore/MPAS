@@ -2,12 +2,14 @@ program test_e_reconstruction
 
    use mpas_kind_types, only : RKIND
    use mpas_electrostatic_bcs, only : electrostatic_apply_ground_rhs, &
-                                      electrostatic_compute_vertical_E
+                                      electrostatic_compute_vertical_E, &
+                                      electrostatic_horizontal_metric_scale
 
    implicit none
 
    call test_vertical_e_uses_ground_centered_and_top_neumann()
    call test_ground_rhs_only_modifies_bottom_level()
+   call test_horizontal_metric_scale_respects_mesh_geometry()
    print *, "PASS: E reconstruction tests"
 
 contains
@@ -45,5 +47,23 @@ contains
       if (abs(rhs(1,2) - 15.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: ground RHS second cell mismatch"
       if (any(abs(rhs(2:nVertLevels,:)) > 1.0e-14_RKIND)) stop "FAIL: ground RHS changed non-ground levels"
    end subroutine test_ground_rhs_only_modifies_bottom_level
+
+   subroutine test_horizontal_metric_scale_respects_mesh_geometry()
+      real(kind=RKIND), parameter :: radius = 6371229.0_RKIND
+      real(kind=RKIND) :: planar_dc(2), unit_sphere_dc(2), meter_sphere_dc(2)
+
+      planar_dc = [500.0_RKIND, 750.0_RKIND]
+      unit_sphere_dc = [0.01_RKIND, 0.02_RKIND]
+      meter_sphere_dc = [50000.0_RKIND, 75000.0_RKIND]
+
+      if (electrostatic_horizontal_metric_scale(2, planar_dc, radius, .false.) /= 1.0_RKIND) &
+         stop "FAIL: planar mesh metrics should not be radius-scaled"
+
+      if (electrostatic_horizontal_metric_scale(2, unit_sphere_dc, radius, .true.) /= radius) &
+         stop "FAIL: unit-sphere mesh metrics should be radius-scaled"
+
+      if (electrostatic_horizontal_metric_scale(2, meter_sphere_dc, radius, .true.) /= 1.0_RKIND) &
+         stop "FAIL: meter-scale spherical mesh metrics should not be radius-scaled"
+   end subroutine test_horizontal_metric_scale_respects_mesh_geometry
 
 end program test_e_reconstruction

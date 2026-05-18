@@ -42,6 +42,26 @@ class TripoleSupercellScriptTests(unittest.TestCase):
         self.assertIn("config_electrostatic_source = 'tripole'", updated)
         self.assertIn("config_poisson_tol = 1.0e-10", updated)
 
+    def test_configure_namelist_can_select_dipole_source(self):
+        script = load_script()
+
+        namelist = """&nhyd_model
+    config_run_duration = '00:03:00'
+/
+"""
+        updated = script.configure_namelist_text(namelist, source="dipole")
+
+        self.assertIn("config_electrostatic_source = 'dipole'", updated)
+        self.assertNotIn("config_electrostatic_source = 'tripole'", updated)
+
+    def test_default_paths_follow_source_name(self):
+        script = load_script()
+
+        args = script.parse_args(["--source", "dipole"])
+
+        self.assertEqual(args.run_dir, pathlib.Path("~/Data/MPAS/poisson_dipole_supercell/run"))
+        self.assertEqual(args.plot.name, "dipole_supercell.png")
+
     def test_ensure_output_stream_list_adds_plot_fields(self):
         script = load_script()
 

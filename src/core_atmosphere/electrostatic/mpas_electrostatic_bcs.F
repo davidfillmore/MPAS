@@ -22,6 +22,7 @@ module mpas_electrostatic_bcs
 
    public :: electrostatic_apply_ground_rhs
    public :: electrostatic_compute_vertical_E
+   public :: electrostatic_horizontal_metric_scale
 
 contains
 
@@ -84,5 +85,30 @@ contains
       end do
 
    end subroutine electrostatic_compute_vertical_E
+
+!***********************************************************************
+!
+!  routine electrostatic_horizontal_metric_scale
+!
+!> \brief Return the scale factor needed for horizontal mesh metrics
+!
+!-----------------------------------------------------------------------
+   real(kind=RKIND) function electrostatic_horizontal_metric_scale(nEdges, dcEdge, sphere_radius, on_a_sphere)
+
+      integer, intent(in) :: nEdges
+      real(kind=RKIND), dimension(nEdges), intent(in) :: dcEdge
+      real(kind=RKIND), intent(in) :: sphere_radius
+      logical, intent(in) :: on_a_sphere
+
+      electrostatic_horizontal_metric_scale = 1.0_RKIND
+
+      if (.not. on_a_sphere) return
+      if (nEdges <= 0) return
+
+      if (sphere_radius > 1000.0_RKIND .and. maxval(abs(dcEdge(1:nEdges))) < 1000.0_RKIND) then
+         electrostatic_horizontal_metric_scale = sphere_radius
+      end if
+
+   end function electrostatic_horizontal_metric_scale
 
 end module mpas_electrostatic_bcs

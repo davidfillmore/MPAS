@@ -18,17 +18,19 @@ module mpas_electrostatic_driver
    use mpas_kind_types, only : RKIND, StrKIND
    use mpas_pool_routines
    use mpas_log, only : mpas_log_write
-   use mpas_dmpar, only : mpas_dmpar_sum_real
+   use mpas_dmpar, only : mpas_dmpar_sum_real, mpas_dmpar_min_real, mpas_dmpar_max_real
    use mpas_atm_halos, only : exchange_halo_group
    use mpas_vector_reconstruction, only : mpas_reconstruct
    use mpas_elliptic_operator, only : mpas_elliptic_operator_type, elliptic_operator_init
    use mpas_pcg_solver, only : mpas_pcg_solver_type, pcg_init, PC_NONE, PC_JACOBI
    use mpas_electrostatic_bcs, only : electrostatic_apply_ground_rhs, &
-                                      electrostatic_compute_vertical_E
+                                      electrostatic_compute_vertical_E, &
+                                      electrostatic_horizontal_metric_scale
    use mpas_electrostatic_source, only : electrostatic_fill_mms_cart_source, &
                                          electrostatic_fill_mms_cart_horizontal_source, &
                                          electrostatic_fill_mms_sphere_source, &
                                          electrostatic_fill_mms_sphere_horizontal_source, &
+                                         electrostatic_fill_dipole_source, &
                                          electrostatic_fill_tripole_source
 
    implicit none
@@ -59,6 +61,8 @@ module mpas_electrostatic_driver
       real(kind=RKIND) :: z_top = 1.0_RKIND
       real(kind=RKIND) :: sphere_radius = 6371229.0_RKIND
       real(kind=RKIND) :: horizontal_length_scale = 1.0_RKIND
+      real(kind=RKIND) :: source_x0 = 0.0_RKIND
+      real(kind=RKIND) :: source_y0 = 0.0_RKIND
       type(electrostatic_block_state), pointer :: next => null()
    end type electrostatic_block_state
 
@@ -80,6 +84,7 @@ contains
 
       type(block_type), pointer :: block_ptr
       type(electrostatic_block_state), pointer :: new_state, tail
+      real(kind=RKIND) :: source_x0, source_y0
 
       if (electrostatic_initialized) then
          call mpas_electrostatic_finalize(domain)
@@ -88,12 +93,14 @@ contains
       nullify(block_states)
       nullify(tail)
 
+      call compute_domain_synthetic_source_center(domain, source_x0, source_y0)
+
       block_ptr => domain % blocklist
       do while (associated(block_ptr))
          allocate(new_state)
          nullify(new_state % next)
 
-         call init_block_state(block_ptr, new_state, domain % sphere_radius)
+         call init_block_state(block_ptr, new_state, domain % sphere_radius, source_x0, source_y0)
 
          if (.not. associated(block_states)) then
             block_states => new_state
@@ -188,16 +195,80 @@ contains
 
 !***********************************************************************
 !
+!  routine compute_domain_synthetic_source_center
+!
+!> \brief Compute a mesh-wide center for synthetic charge sources
+!
+!-----------------------------------------------------------------------
+   subroutine compute_domain_synthetic_source_center(domain, source_x0, source_y0)
+
+      type(domain_type), intent(inout) :: domain
+      real(kind=RKIND), intent(out) :: source_x0
+      real(kind=RKIND), intent(out) :: source_y0
+
+      type(block_type), pointer :: block_ptr
+      type(mpas_pool_type), pointer :: mesh_pool
+      integer, pointer :: nCellsSolve_ptr
+      integer :: nCellsSolve
+      real(kind=RKIND), dimension(:), pointer :: xCell, yCell
+      real(kind=RKIND) :: local_xmin, local_xmax, local_ymin, local_ymax
+      real(kind=RKIND) :: global_xmin, global_xmax, global_ymin, global_ymax
+
+      local_xmin = huge(1.0_RKIND)
+      local_xmax = -huge(1.0_RKIND)
+      local_ymin = huge(1.0_RKIND)
+      local_ymax = -huge(1.0_RKIND)
+
+      block_ptr => domain % blocklist
+      do while (associated(block_ptr))
+         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
+         call mpas_pool_get_dimension(mesh_pool, 'nCellsSolve', nCellsSolve_ptr)
+         call mpas_pool_get_array(mesh_pool, 'xCell', xCell)
+         call mpas_pool_get_array(mesh_pool, 'yCell', yCell)
+
+         nCellsSolve = nCellsSolve_ptr
+         if (nCellsSolve > 0) then
+            local_xmin = min(local_xmin, minval(xCell(1:nCellsSolve)))
+            local_xmax = max(local_xmax, maxval(xCell(1:nCellsSolve)))
+            local_ymin = min(local_ymin, minval(yCell(1:nCellsSolve)))
+            local_ymax = max(local_ymax, maxval(yCell(1:nCellsSolve)))
+         end if
+
+         block_ptr => block_ptr % next
+      end do
+
+      call mpas_dmpar_min_real(domain % dminfo, local_xmin, global_xmin)
+      call mpas_dmpar_max_real(domain % dminfo, local_xmax, global_xmax)
+      call mpas_dmpar_min_real(domain % dminfo, local_ymin, global_ymin)
+      call mpas_dmpar_max_real(domain % dminfo, local_ymax, global_ymax)
+
+      if (global_xmax >= global_xmin) then
+         source_x0 = 0.5_RKIND * (global_xmin + global_xmax)
+      else
+         source_x0 = 0.0_RKIND
+      end if
+      if (global_ymax >= global_ymin) then
+         source_y0 = 0.5_RKIND * (global_ymin + global_ymax)
+      else
+         source_y0 = 0.0_RKIND
+      end if
+
+   end subroutine compute_domain_synthetic_source_center
+
+!***********************************************************************
+!
 !  routine init_block_state
 !
 !> \brief Initialize one block's electrostatic operator and PCG workspace
 !
 !-----------------------------------------------------------------------
-   subroutine init_block_state(block_ptr, state_ptr, sphere_radius)
+   subroutine init_block_state(block_ptr, state_ptr, sphere_radius, source_x0, source_y0)
 
       type(block_type), pointer, intent(inout) :: block_ptr
       type(electrostatic_block_state), pointer, intent(inout) :: state_ptr
       real(kind=RKIND), intent(in) :: sphere_radius
+      real(kind=RKIND), intent(in) :: source_x0
+      real(kind=RKIND), intent(in) :: source_y0
 
       type(mpas_pool_type), pointer :: mesh_pool, es_pool
       integer, pointer :: nCells_ptr, nEdges_ptr, nVertLevels_ptr, maxEdges_ptr
@@ -215,7 +286,7 @@ contains
       real(kind=RKIND), pointer :: mesh_x_period, mesh_y_period
       real(kind=RKIND), allocatable :: dz(:)
       real(kind=RKIND), allocatable :: areaMetric(:), dcMetric(:), dvMetric(:)
-      logical, pointer :: is_periodic
+      logical, pointer :: is_periodic, on_a_sphere
       character(len=StrKIND), pointer :: pc_name
 
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
@@ -241,6 +312,7 @@ contains
       call mpas_pool_get_array(mesh_pool, 'xCell', xCell)
       call mpas_pool_get_array(mesh_pool, 'yCell', yCell)
       call mpas_pool_get_array(mesh_pool, 'zgrid', zgrid)
+      call mpas_pool_get_config(mesh_pool, 'on_a_sphere', on_a_sphere)
       call mpas_pool_get_config(mesh_pool, 'is_periodic', is_periodic)
       call mpas_pool_get_config(mesh_pool, 'x_period', mesh_x_period)
       call mpas_pool_get_config(mesh_pool, 'y_period', mesh_y_period)
@@ -265,7 +337,10 @@ contains
 
       call fill_z_geometry(nCells, nVertLevels, zgrid, state_ptr % zMid, dz)
       if (sphere_radius > 0.0_RKIND) state_ptr % sphere_radius = sphere_radius
-      state_ptr % horizontal_length_scale = horizontal_metric_scale(nEdges, dcEdge, state_ptr % sphere_radius)
+      state_ptr % source_x0 = source_x0
+      state_ptr % source_y0 = source_y0
+      state_ptr % horizontal_length_scale = &
+         electrostatic_horizontal_metric_scale(nEdges, dcEdge, state_ptr % sphere_radius, on_a_sphere)
       areaMetric = areaCell * state_ptr % horizontal_length_scale * state_ptr % horizontal_length_scale
       dcMetric = dcEdge * state_ptr % horizontal_length_scale
       dvMetric = dvEdge * state_ptr % horizontal_length_scale
@@ -373,9 +448,14 @@ contains
                                                               state_ptr % op % v_weight_upper, &
                                                               state_ptr % op % v_weight_lower, &
                                                               state_ptr % op % volume, rho_charge)
+      case ('dipole')
+         call electrostatic_fill_dipole_source(nCells, nVertLevels, xCell, yCell, &
+                                               state_ptr % zMid, state_ptr % source_x0, &
+                                               state_ptr % source_y0, rho_charge)
       case ('tripole')
          call electrostatic_fill_tripole_source(nCells, nVertLevels, xCell, yCell, &
-                                                state_ptr % zMid, rho_charge)
+                                                state_ptr % zMid, state_ptr % source_x0, &
+                                                state_ptr % source_y0, rho_charge)
       case default
          call electrostatic_fill_mms_cart_source(nCells, nVertLevels, xCell, yCell, state_ptr % zMid, &
                                                  epsilon0, state_ptr % x_period, state_ptr % y_period, &
@@ -825,29 +905,6 @@ contains
       end do
 
    end subroutine compute_edge_normal_E
-
-!***********************************************************************
-!
-!  routine horizontal_metric_scale
-!
-!> \brief Infer whether spherical horizontal mesh metrics are stored on a unit sphere
-!
-!-----------------------------------------------------------------------
-   real(kind=RKIND) function horizontal_metric_scale(nEdges, dcEdge, sphere_radius)
-
-      integer, intent(in) :: nEdges
-      real(kind=RKIND), dimension(nEdges), intent(in) :: dcEdge
-      real(kind=RKIND), intent(in) :: sphere_radius
-
-      horizontal_metric_scale = 1.0_RKIND
-
-      if (nEdges <= 0) return
-
-      if (sphere_radius > 1000.0_RKIND .and. maxval(abs(dcEdge(1:nEdges))) < 1000.0_RKIND) then
-         horizontal_metric_scale = sphere_radius
-      end if
-
-   end function horizontal_metric_scale
 
 !***********************************************************************
 !

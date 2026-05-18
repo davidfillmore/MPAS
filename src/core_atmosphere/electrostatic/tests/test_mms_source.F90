@@ -7,6 +7,7 @@ program test_mms_source
                                          electrostatic_fill_mms_cart_horizontal_source, &
                                          electrostatic_fill_mms_sphere_source, &
                                          electrostatic_fill_mms_sphere_horizontal_source, &
+                                         electrostatic_fill_dipole_source, &
                                          electrostatic_fill_tripole_source
 
    implicit none
@@ -15,7 +16,8 @@ program test_mms_source
    call test_horizontal_mms_source_uses_discrete_vertical_operator()
    call test_sphere_mms_source_uses_boundary_compatible_vertical_basis()
    call test_sphere_horizontal_mms_source_uses_discrete_vertical_operator()
-   call test_tripole_source_is_centered_with_expected_lobe_signs()
+   call test_dipole_source_uses_explicit_center_with_expected_lobe_signs()
+   call test_tripole_source_uses_explicit_center_with_expected_lobe_signs()
    call test_error_norms_are_relative_l2_and_absolute_linf()
    print *, "PASS: MMS source utility tests"
 
@@ -177,29 +179,56 @@ contains
          stop "FAIL: spherical horizontal MMS top-level source mismatch"
    end subroutine test_sphere_horizontal_mms_source_uses_discrete_vertical_operator
 
-   subroutine test_tripole_source_is_centered_with_expected_lobe_signs()
+   subroutine test_dipole_source_uses_explicit_center_with_expected_lobe_signs()
+      integer, parameter :: nCells = 3, nVertLevels = 3
+      real(kind=RKIND) :: xCell(nCells), yCell(nCells), zMid(nVertLevels,nCells)
+      real(kind=RKIND) :: rho_charge(nVertLevels,nCells)
+      real(kind=RKIND) :: center_column_peak, off_center_peak
+      real(kind=RKIND), parameter :: x0 = 42000.0_RKIND
+      real(kind=RKIND), parameter :: y0 = 42000.0_RKIND
+      integer :: iCell
+
+      xCell = [42000.0_RKIND, 84000.0_RKIND, 126000.0_RKIND]
+      yCell = [42000.0_RKIND, 42000.0_RKIND, 42000.0_RKIND]
+      do iCell = 1, nCells
+         zMid(:,iCell) = [5000.0_RKIND, 9000.0_RKIND, 13000.0_RKIND]
+      end do
+
+      call electrostatic_fill_dipole_source(nCells, nVertLevels, xCell, yCell, zMid, x0, y0, rho_charge)
+
+      center_column_peak = maxval(abs(rho_charge(:,1)))
+      off_center_peak = max(maxval(abs(rho_charge(:,2))), maxval(abs(rho_charge(:,3))))
+      if (center_column_peak <= off_center_peak) stop "FAIL: dipole source does not honor explicit center"
+
+      if (rho_charge(1,1) <= 0.0_RKIND) stop "FAIL: lower dipole lobe should be positive"
+      if (rho_charge(2,1) >= 0.0_RKIND) stop "FAIL: upper dipole lobe should be negative"
+   end subroutine test_dipole_source_uses_explicit_center_with_expected_lobe_signs
+
+   subroutine test_tripole_source_uses_explicit_center_with_expected_lobe_signs()
       integer, parameter :: nCells = 3, nVertLevels = 5
       real(kind=RKIND) :: xCell(nCells), yCell(nCells), zMid(nVertLevels,nCells)
       real(kind=RKIND) :: rho_charge(nVertLevels,nCells)
       real(kind=RKIND) :: center_column_peak, off_center_peak
+      real(kind=RKIND), parameter :: x0 = 42000.0_RKIND
+      real(kind=RKIND), parameter :: y0 = 42000.0_RKIND
       integer :: iCell
 
-      xCell = [0.0_RKIND, 42000.0_RKIND, 84000.0_RKIND]
+      xCell = [42000.0_RKIND, 84000.0_RKIND, 126000.0_RKIND]
       yCell = [42000.0_RKIND, 42000.0_RKIND, 42000.0_RKIND]
       do iCell = 1, nCells
          zMid(:,iCell) = [4000.0_RKIND, 7000.0_RKIND, 10000.0_RKIND, 13000.0_RKIND, 16000.0_RKIND]
       end do
 
-      call electrostatic_fill_tripole_source(nCells, nVertLevels, xCell, yCell, zMid, rho_charge)
+      call electrostatic_fill_tripole_source(nCells, nVertLevels, xCell, yCell, zMid, x0, y0, rho_charge)
 
-      center_column_peak = maxval(abs(rho_charge(:,2)))
-      off_center_peak = max(maxval(abs(rho_charge(:,1))), maxval(abs(rho_charge(:,3))))
-      if (center_column_peak <= off_center_peak) stop "FAIL: tripole source is not centered"
+      center_column_peak = maxval(abs(rho_charge(:,1)))
+      off_center_peak = max(maxval(abs(rho_charge(:,2))), maxval(abs(rho_charge(:,3))))
+      if (center_column_peak <= off_center_peak) stop "FAIL: tripole source does not honor explicit center"
 
-      if (rho_charge(1,2) <= 0.0_RKIND) stop "FAIL: lower tripole lobe should be positive"
-      if (rho_charge(2,2) >= 0.0_RKIND) stop "FAIL: middle tripole lobe should be negative"
-      if (rho_charge(3,2) <= 0.0_RKIND) stop "FAIL: upper tripole lobe should be positive"
-   end subroutine test_tripole_source_is_centered_with_expected_lobe_signs
+      if (rho_charge(1,1) <= 0.0_RKIND) stop "FAIL: lower tripole lobe should be positive"
+      if (rho_charge(2,1) >= 0.0_RKIND) stop "FAIL: middle tripole lobe should be negative"
+      if (rho_charge(3,1) <= 0.0_RKIND) stop "FAIL: upper tripole lobe should be positive"
+   end subroutine test_tripole_source_uses_explicit_center_with_expected_lobe_signs
 
    subroutine test_error_norms_are_relative_l2_and_absolute_linf()
       real(kind=RKIND) :: phi_exact(2,2), phi(2,2), volume(2,2)
