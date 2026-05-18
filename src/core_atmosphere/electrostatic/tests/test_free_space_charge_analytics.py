@@ -166,6 +166,27 @@ class GaussianAnalyticTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             analytic.align_potential_gauge(phi_mpas, phi_exact, weights, mask)
 
+    def test_gauge_alignment_rejects_negative_masked_weights(self):
+        analytic = load_module()
+        phi_mpas = np.array([11.0, 12.0])
+        phi_exact = np.array([1.0, 2.0])
+        weights = np.array([2.0, -1.0])
+        mask = np.array([True, True])
+
+        with self.assertRaises(ValueError):
+            analytic.align_potential_gauge(phi_mpas, phi_exact, weights, mask)
+
+    def test_gauge_alignment_rejects_nonfinite_masked_weights(self):
+        analytic = load_module()
+        phi_mpas = np.array([11.0, 12.0])
+        phi_exact = np.array([1.0, 2.0])
+        mask = np.array([True, True])
+
+        for weights in (np.array([1.0, math.inf]), np.array([1.0, math.nan])):
+            with self.subTest(weights=weights):
+                with self.assertRaises(ValueError):
+                    analytic.align_potential_gauge(phi_mpas, phi_exact, weights, mask)
+
     def test_error_norms_are_finite_and_relative(self):
         analytic = load_module()
         exact = np.array([2.0, 4.0])

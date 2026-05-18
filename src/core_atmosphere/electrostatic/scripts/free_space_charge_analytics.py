@@ -30,6 +30,20 @@ def _erf_array(values):
     return np.vectorize(math.erf, otypes=[float])(values)
 
 
+def _valid_masked_weights(weights, mask):
+    weights = _as_float_array(weights)
+    mask = np.asarray(mask, dtype=bool)
+    if not np.any(mask):
+        raise ValueError("comparison mask is empty")
+    masked_weights = weights[mask]
+    if not np.all(np.isfinite(masked_weights)) or np.any(masked_weights < 0.0):
+        raise ValueError("masked weights must be finite and nonnegative")
+    masked_weight_sum = float(np.sum(masked_weights))
+    if masked_weight_sum == 0.0:
+        raise ValueError("masked weight sum must be nonzero")
+    return masked_weights, masked_weight_sum
+
+
 def gaussian_lobe_density(x, y, z, *, center, charge, sigma):
     x = _as_float_array(x)
     y = _as_float_array(y)
@@ -155,32 +169,19 @@ def interior_comparison_mask(x, y, z, *, bounds, centers, sigma, boundary_margin
 def align_potential_gauge(phi_mpas, phi_exact, weights, mask):
     phi_mpas = _as_float_array(phi_mpas)
     phi_exact = _as_float_array(phi_exact)
-    weights = _as_float_array(weights)
     mask = np.asarray(mask, dtype=bool)
-    if not np.any(mask):
-        raise ValueError("comparison mask is empty")
-    masked_weight_sum = float(np.sum(weights[mask]))
-    if not math.isfinite(masked_weight_sum) or masked_weight_sum == 0.0:
-        raise ValueError("masked weight sum must be finite and nonzero")
-    offset = float(np.sum(weights[mask] * (phi_mpas[mask] - phi_exact[mask])) / masked_weight_sum)
+    masked_weights, masked_weight_sum = _valid_masked_weights(weights, mask)
+    offset = float(np.sum(masked_weights * (phi_mpas[mask] - phi_exact[mask])) / masked_weight_sum)
     return phi_mpas - offset, offset
 
 
 def weighted_error_norms(actual, exact, weights, mask, *, relative_floor=0.0):
     actual = _as_float_array(actual)
     exact = _as_float_array(exact)
-    weights = _as_float_array(weights)
     mask = np.asarray(mask, dtype=bool)
-    if not np.any(mask):
-        raise ValueError("comparison mask is empty")
     if relative_floor < 0.0:
         raise ValueError("relative_floor must be nonnegative")
-    masked_weights = weights[mask]
-    if not np.all(np.isfinite(masked_weights)) or np.any(masked_weights < 0.0):
-        raise ValueError("masked weights must be finite and nonnegative")
-    masked_weight_sum = float(np.sum(masked_weights))
-    if masked_weight_sum == 0.0:
-        raise ValueError("masked weight sum must be nonzero")
+    masked_weights, masked_weight_sum = _valid_masked_weights(weights, mask)
     diff = actual[mask] - exact[mask]
     numerator = float(np.sum(masked_weights * diff * diff))
     denominator = float(np.sum(masked_weights * exact[mask] * exact[mask]))
