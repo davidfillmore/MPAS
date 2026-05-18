@@ -344,6 +344,8 @@ Focused Python helper checks are also available without building MPAS-A:
   src/core_atmosphere/electrostatic/tests/test_tier_A2_defect_correction.py
 ~/miniconda3/envs/mpas/bin/python \
   src/core_atmosphere/electrostatic/tests/test_tripole_supercell_script.py
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/tests/test_charge_coupled_supercell_script.py
 ```
 
 On the local macOS host, the `mpas` conda environment supplies Python packages

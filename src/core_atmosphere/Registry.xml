@@ -472,7 +472,7 @@
                      description="Maximum PCG iterations."/>
 
                 <nml_option name="config_electrostatic_source" type="character" default_value="mms_cart"
-                     possible_values="mms_cart,mms_cart_horizontal,mms_sphere,mms_sphere_horizontal,dipole,tripole,gaussian_monopole,gaussian_dipole_y,gaussian_dipole_z,external"
+                     possible_values="mms_cart,mms_cart_horizontal,mms_sphere,mms_sphere_horizontal,dipole,tripole,gaussian_monopole,gaussian_dipole_y,gaussian_dipole_z,stub,external"
                      description="Charge-density source for diagnostic electrostatics."/>
 
                 <nml_option name="config_electrostatic_source_charge" type="real" default_value="20.0"
@@ -486,6 +486,14 @@
                 <nml_option name="config_electrostatic_dipole_separation" type="real" default_value="8000.0"
                      units="m"
                      description="Lobe separation for Gaussian analytic benchmark dipole sources."/>
+
+                <nml_option name="config_stub_alpha" type="real" default_value="1.0e-8"
+                     units="C s kg^{-1} m^{-4}"
+                     description="Tunable coefficient for the updraft-positive-hydrometeor term in the diagnostic electrification stub."/>
+
+                <nml_option name="config_stub_beta" type="real" default_value="1.0e-8"
+                     units="C kg^{-1} m^{-3}"
+                     description="Tunable coefficient for the negative-hydrometeor term in the diagnostic electrification stub."/>
 
                 <nml_option name="config_electrostatic_bc_ground" type="real" default_value="0.0"
                      units="V"
@@ -2073,19 +2081,19 @@
 
         <var_struct name="electrostatic" time_levs="1">
 
-                <var name="phi" type="real" dimensions="nVertLevels nCells" units="V"
+                <var name="phi" type="real" dimensions="nVertLevels nCells Time" units="V"
                      packages="electrostatic_pkg"
                      description="Electrostatic potential at cell centers."/>
 
-                <var name="rho_charge" type="real" dimensions="nVertLevels nCells" units="C m^{-3}"
+                <var name="rho_charge" type="real" dimensions="nVertLevels nCells Time" units="C m^{-3}"
                      packages="electrostatic_pkg"
                      description="Free charge density supplied to the Poisson solver."/>
 
-                <var name="E_normal" type="real" dimensions="nVertLevels nEdges" units="V m^{-1}"
+                <var name="E_normal" type="real" dimensions="nVertLevels nEdges Time" units="V m^{-1}"
                      packages="electrostatic_pkg"
                      description="Horizontal edge-normal electric field component."/>
 
-                <var name="E_vector" type="real" dimensions="R3 nVertLevels nCells" units="V m^{-1}"
+                <var name="E_vector" type="real" dimensions="R3 nVertLevels nCells Time" units="V m^{-1}"
                      packages="electrostatic_pkg"
                      description="Cell-centered electric field vector."/>
 

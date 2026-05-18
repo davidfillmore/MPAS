@@ -34,7 +34,9 @@ module mpas_electrostatic_driver
                                          electrostatic_fill_tripole_source, &
                                          electrostatic_fill_gaussian_monopole_source, &
                                          electrostatic_fill_gaussian_dipole_y_source, &
-                                         electrostatic_fill_gaussian_dipole_z_source
+                                         electrostatic_fill_gaussian_dipole_z_source, &
+                                         electrostatic_fill_stub_source, &
+                                         electrostatic_select_stub_indices
 
    implicit none
    private
@@ -398,21 +400,31 @@ contains
       type(block_type), pointer, intent(inout) :: block_ptr
       type(electrostatic_block_state), pointer, intent(inout) :: state_ptr
 
-      type(mpas_pool_type), pointer :: mesh_pool, es_pool
+      type(mpas_pool_type), pointer :: mesh_pool, es_pool, state_pool
       integer, pointer :: nCells_ptr, nVertLevels_ptr
-      integer :: nCells, nVertLevels
+      integer, pointer :: num_scalars_ptr, index_qc_ptr, index_qr_ptr, index_qi_ptr, index_qg_ptr
+      integer :: nCells, nVertLevels, stub_negative_index, stub_positive_index
       real(kind=RKIND), dimension(:), pointer :: latCell, lonCell, xCell, yCell
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, rho_charge
+      real(kind=RKIND), dimension(:,:), pointer :: w
+      real(kind=RKIND), dimension(:,:,:), pointer :: scalars
       real(kind=RKIND), pointer :: phi_ground
       real(kind=RKIND), pointer :: source_charge, source_sigma, dipole_separation
+      real(kind=RKIND), pointer :: stub_alpha, stub_beta
       character(len=StrKIND), pointer :: source_name
 
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
       call mpas_pool_get_subpool(block_ptr % structs, 'electrostatic', es_pool)
+      call mpas_pool_get_subpool(block_ptr % structs, 'state', state_pool)
 
       call mpas_pool_get_dimension(mesh_pool, 'nCells', nCells_ptr)
       call mpas_pool_get_dimension(mesh_pool, 'nVertLevels', nVertLevels_ptr)
+      call mpas_pool_get_dimension(state_pool, 'num_scalars', num_scalars_ptr)
+      call mpas_pool_get_dimension(state_pool, 'index_qc', index_qc_ptr)
+      call mpas_pool_get_dimension(state_pool, 'index_qr', index_qr_ptr)
+      call mpas_pool_get_dimension(state_pool, 'index_qi', index_qi_ptr)
+      call mpas_pool_get_dimension(state_pool, 'index_qg', index_qg_ptr)
       nCells = nCells_ptr
       nVertLevels = nVertLevels_ptr
 
@@ -421,6 +433,8 @@ contains
       call mpas_pool_get_array(mesh_pool, 'latCell', latCell)
       call mpas_pool_get_array(mesh_pool, 'lonCell', lonCell)
       call mpas_pool_get_array(mesh_pool, 'zgrid', zgrid)
+      call mpas_pool_get_array(state_pool, 'w', w, 1)
+      call mpas_pool_get_array(state_pool, 'scalars', scalars, 1)
       call mpas_pool_get_array(es_pool, 'phi', phi)
       call mpas_pool_get_array(es_pool, 'rho_charge', rho_charge)
 
@@ -429,6 +443,8 @@ contains
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_source_charge', source_charge)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_source_sigma', source_sigma)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_dipole_separation', dipole_separation)
+      call mpas_pool_get_config(block_ptr % configs, 'config_stub_alpha', stub_alpha)
+      call mpas_pool_get_config(block_ptr % configs, 'config_stub_beta', stub_beta)
 
       call fill_z_mid(nCells, nVertLevels, zgrid, state_ptr % zMid)
 
@@ -480,6 +496,13 @@ contains
                                                           state_ptr % source_y0, 0.5_RKIND * state_ptr % z_top, &
                                                           source_charge, source_sigma, dipole_separation, &
                                                           rho_charge)
+      case ('stub')
+         call electrostatic_select_stub_indices(num_scalars_ptr, index_qi_ptr, index_qg_ptr, &
+                                                index_qc_ptr, index_qr_ptr, &
+                                                stub_negative_index, stub_positive_index)
+         call electrostatic_fill_stub_source(nCells, nVertLevels, num_scalars_ptr, w, scalars, &
+                                             stub_negative_index, stub_positive_index, stub_alpha, stub_beta, &
+                                             rho_charge)
       case default
          call electrostatic_fill_mms_cart_source(nCells, nVertLevels, xCell, yCell, state_ptr % zMid, &
                                                  epsilon0, state_ptr % x_period, state_ptr % y_period, &

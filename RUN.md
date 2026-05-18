@@ -423,6 +423,61 @@ The synthetic dipole and tripole centers are computed once from the owned-cell
 mesh extent across the full MPI domain, so decomposed runs do not duplicate the
 source around block-local centers.
 
+## Poisson Diagnostic Charge-Coupled Supercell
+
+The charge-coupled helper prepares a short dynamic supercell run with the
+diagnostic electrification stub. This is still a one-way Phase 1 coupling:
+MPAS state fills `rho_charge`, the Poisson solve writes `phi` and `E`, and no
+electric-field feedback is applied to dynamics, microphysics, chemistry, or
+lightning.
+
+The stub source is selected with `config_electrostatic_source = 'stub'` and
+uses the current-time state fields as:
+
+```text
+rho_charge = config_stub_alpha * w_mid * q_pos - config_stub_beta * q_neg
+```
+
+where `w_mid` is the vertical velocity averaged from model interfaces to layer
+midpoints. The positive hydrometeor proxy `q_pos` is `qg` when graupel is
+active, otherwise `qr` when the run uses a warm-rain suite such as Kessler. The
+negative proxy `q_neg` is `qi` when ice is active, otherwise `qc`. If neither
+member of a proxy pair is active, that term is ignored.
+
+Prepare a 10-minute isolated run directory without running MPAS:
+
+```bash
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/scripts/run_charge_coupled_supercell.py \
+  --prepare-only \
+  --template-run-dir ~/Data/MPAS/supercell \
+  --run-duration 00_00:10:00 \
+  --electrostatic-interval 60.0 \
+  --output-interval 00:10:00 \
+  --ranks 8 \
+  --model ./atmosphere_model
+```
+
+Run the short coupled diagnostic:
+
+```bash
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/scripts/run_charge_coupled_supercell.py \
+  --template-run-dir ~/Data/MPAS/supercell \
+  --run-duration 00_00:10:00 \
+  --electrostatic-interval 60.0 \
+  --output-interval 00:10:00 \
+  --ranks 8 \
+  --model ./atmosphere_model
+```
+
+Outputs are written under
+`~/Data/MPAS/poisson_charge_coupled_supercell/run/`. The helper writes a
+compact output stream list containing mesh coordinates, `w`, `scalars`,
+`rho_charge`, `phi`, `E_normal`, `E_vector`, and CG diagnostics so the source
+coupling and solve behavior can be inspected after the run without writing the
+full template output stream at every dynamic sample.
+
 ## Poisson Interior Free-Space Charge Benchmarks
 
 The free-space charge benchmark helper runs smooth Gaussian monopole and dipole

@@ -11,7 +11,9 @@ program test_mms_source
                                          electrostatic_fill_tripole_source, &
                                          electrostatic_fill_gaussian_monopole_source, &
                                          electrostatic_fill_gaussian_dipole_y_source, &
-                                         electrostatic_fill_gaussian_dipole_z_source
+                                         electrostatic_fill_gaussian_dipole_z_source, &
+                                         electrostatic_fill_stub_source, &
+                                         electrostatic_select_stub_indices
 
    implicit none
 
@@ -24,6 +26,8 @@ program test_mms_source
    call test_gaussian_monopole_source_is_centered_and_positive()
    call test_gaussian_dipole_sources_have_expected_signs()
    call test_gaussian_charges_have_expected_integrals()
+   call test_stub_source_couples_w_graupel_and_ice()
+   call test_stub_source_selects_warm_rain_fallback_indices()
    call test_error_norms_are_relative_l2_and_absolute_linf()
    print *, "PASS: MMS source utility tests"
 
@@ -339,6 +343,64 @@ contains
       if (abs(integral) > 1.0e-10_RKIND * charge) &
          stop "FAIL: vertical Gaussian dipole should be net neutral"
    end subroutine test_gaussian_charges_have_expected_integrals
+
+   subroutine test_stub_source_couples_w_graupel_and_ice()
+      integer, parameter :: nCells = 2, nVertLevels = 2, num_scalars = 4
+      integer, parameter :: index_qi = 2, index_qg = 3
+      real(kind=RKIND), parameter :: alpha = 10.0_RKIND
+      real(kind=RKIND), parameter :: beta = 2.0_RKIND
+      real(kind=RKIND) :: w(nVertLevels+1,nCells)
+      real(kind=RKIND) :: scalars(num_scalars,nVertLevels,nCells)
+      real(kind=RKIND) :: rho_charge(nVertLevels,nCells)
+      real(kind=RKIND) :: expected
+
+      w(:,1) = [0.0_RKIND, 2.0_RKIND, 4.0_RKIND]
+      w(:,2) = [-1.0_RKIND, 1.0_RKIND, 3.0_RKIND]
+      scalars = 0.0_RKIND
+      scalars(index_qg,:,1) = [0.5_RKIND, 1.5_RKIND]
+      scalars(index_qi,:,1) = [0.2_RKIND, 0.4_RKIND]
+      scalars(index_qg,:,2) = [2.0_RKIND, 3.0_RKIND]
+      scalars(index_qi,:,2) = [0.7_RKIND, 0.9_RKIND]
+
+      call electrostatic_fill_stub_source(nCells, nVertLevels, num_scalars, w, scalars, &
+                                          index_qi, index_qg, alpha, beta, rho_charge)
+
+      expected = alpha * 1.0_RKIND * 0.5_RKIND - beta * 0.2_RKIND
+      if (abs(rho_charge(1,1) - expected) > 1.0e-14_RKIND) &
+         stop "FAIL: stub source first-cell charge mismatch"
+      expected = alpha * 3.0_RKIND * 1.5_RKIND - beta * 0.4_RKIND
+      if (abs(rho_charge(2,1) - expected) > 1.0e-14_RKIND) &
+         stop "FAIL: stub source vertical midpoint charge mismatch"
+      expected = alpha * 0.0_RKIND * 2.0_RKIND - beta * 0.7_RKIND
+      if (abs(rho_charge(1,2) - expected) > 1.0e-14_RKIND) &
+         stop "FAIL: stub source uses face-averaged w mismatch"
+
+      call electrostatic_fill_stub_source(nCells, nVertLevels, num_scalars, w, scalars, &
+                                          -1, index_qg, alpha, beta, rho_charge)
+      expected = alpha * 1.0_RKIND * 0.5_RKIND
+      if (abs(rho_charge(1,1) - expected) > 1.0e-14_RKIND) &
+         stop "FAIL: stub source should ignore absent ice scalar"
+   end subroutine test_stub_source_couples_w_graupel_and_ice
+
+   subroutine test_stub_source_selects_warm_rain_fallback_indices()
+      integer :: index_negative, index_positive
+
+      call electrostatic_select_stub_indices(4, -1, -1, 2, 3, index_negative, index_positive)
+      if (index_negative /= 2) &
+         stop "FAIL: stub source should fall back from missing ice to cloud water"
+      if (index_positive /= 3) &
+         stop "FAIL: stub source should fall back from missing graupel to rain"
+
+      call electrostatic_select_stub_indices(6, 5, 6, 2, 3, index_negative, index_positive)
+      if (index_negative /= 5) &
+         stop "FAIL: stub source should prefer ice when available"
+      if (index_positive /= 6) &
+         stop "FAIL: stub source should prefer graupel when available"
+
+      call electrostatic_select_stub_indices(4, 7, 8, -1, -1, index_negative, index_positive)
+      if (index_negative /= -1 .or. index_positive /= -1) &
+         stop "FAIL: stub source should reject out-of-range hydrometeor indices"
+   end subroutine test_stub_source_selects_warm_rain_fallback_indices
 
    subroutine test_error_norms_are_relative_l2_and_absolute_linf()
       real(kind=RKIND) :: phi_exact(2,2), phi(2,2), volume(2,2)

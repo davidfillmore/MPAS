@@ -29,8 +29,46 @@ module mpas_electrostatic_source
    public :: electrostatic_fill_gaussian_monopole_source
    public :: electrostatic_fill_gaussian_dipole_y_source
    public :: electrostatic_fill_gaussian_dipole_z_source
+   public :: electrostatic_fill_stub_source
+   public :: electrostatic_select_stub_indices
 
 contains
+
+!***********************************************************************
+!
+!  routine electrostatic_select_stub_indices
+!
+!> \brief Select hydrometeor scalar indices for the diagnostic charge stub
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_select_stub_indices(num_scalars, index_qi, index_qg, index_qc, index_qr, &
+                                                index_negative, index_positive)
+
+      integer, intent(in) :: num_scalars
+      integer, intent(in) :: index_qi
+      integer, intent(in) :: index_qg
+      integer, intent(in) :: index_qc
+      integer, intent(in) :: index_qr
+      integer, intent(out) :: index_negative
+      integer, intent(out) :: index_positive
+
+      if (valid_scalar_index(index_qi, num_scalars)) then
+         index_negative = index_qi
+      else if (valid_scalar_index(index_qc, num_scalars)) then
+         index_negative = index_qc
+      else
+         index_negative = -1
+      end if
+
+      if (valid_scalar_index(index_qg, num_scalars)) then
+         index_positive = index_qg
+      else if (valid_scalar_index(index_qr, num_scalars)) then
+         index_positive = index_qr
+      else
+         index_positive = -1
+      end if
+
+   end subroutine electrostatic_select_stub_indices
 
 !***********************************************************************
 !
@@ -457,6 +495,64 @@ contains
       end do
 
    end subroutine add_gaussian_charge_lobe
+
+!***********************************************************************
+!
+!  routine electrostatic_fill_stub_source
+!
+!> \brief Fill charge density from a lightweight storm electrification proxy
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_fill_stub_source(nCells, nVertLevels, num_scalars, w, scalars, &
+                                             index_negative, index_positive, alpha, beta, rho_charge)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      integer, intent(in) :: num_scalars
+      real(kind=RKIND), dimension(nVertLevels+1,nCells), intent(in) :: w
+      real(kind=RKIND), dimension(num_scalars,nVertLevels,nCells), intent(in) :: scalars
+      integer, intent(in) :: index_negative
+      integer, intent(in) :: index_positive
+      real(kind=RKIND), intent(in) :: alpha
+      real(kind=RKIND), intent(in) :: beta
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: rho_charge
+
+      integer :: iCell, k
+      logical :: has_positive, has_negative
+      real(kind=RKIND) :: q_positive, q_negative, w_mid
+
+      has_positive = valid_scalar_index(index_positive, num_scalars)
+      has_negative = valid_scalar_index(index_negative, num_scalars)
+
+      rho_charge = 0.0_RKIND
+      do iCell = 1, nCells
+         do k = 1, nVertLevels
+            q_positive = 0.0_RKIND
+            q_negative = 0.0_RKIND
+            if (has_positive) q_positive = max(scalars(index_positive,k,iCell), 0.0_RKIND)
+            if (has_negative) q_negative = max(scalars(index_negative,k,iCell), 0.0_RKIND)
+            w_mid = 0.5_RKIND * (w(k,iCell) + w(k+1,iCell))
+            rho_charge(k,iCell) = alpha * w_mid * q_positive - beta * q_negative
+         end do
+      end do
+
+   end subroutine electrostatic_fill_stub_source
+
+!***********************************************************************
+!
+!  routine valid_scalar_index
+!
+!> \brief Return true when a scalar index is active in the current package set
+!
+!-----------------------------------------------------------------------
+   logical function valid_scalar_index(index_scalar, num_scalars)
+
+      integer, intent(in) :: index_scalar
+      integer, intent(in) :: num_scalars
+
+      valid_scalar_index = index_scalar > 0 .and. index_scalar <= num_scalars
+
+   end function valid_scalar_index
 
 !***********************************************************************
 !
