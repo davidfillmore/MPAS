@@ -173,6 +173,32 @@ class FreeSpaceChargeRunnerTests(unittest.TestCase):
             self.assertTrue(summary.exists())
             self.assertTrue(plot.exists())
 
+    def test_analyze_output_detects_sign_flipped_e_vector(self):
+        script = load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            output = tmp_path / "output.nc"
+            summary = tmp_path / "summary.json"
+            plot = tmp_path / "plot.png"
+            write_synthetic_gaussian_output(output, script, e_multiplier=-1.0)
+
+            result = script.analyze_output(
+                output,
+                summary,
+                plot,
+                source="gaussian_monopole",
+                charge=2.0,
+                sigma=1000.0,
+                separation=4000.0,
+                boundary_margin=0.0,
+                core_radius=0.0,
+                e_relative_floor=0.0,
+            )
+
+            self.assertLess(result["phi_l2_relative"], 1.0e-12)
+            self.assertGreater(result["e_l2_relative"], 1.0)
+            self.assertGreater(result["e_linf_absolute"], 0.0)
+
     def test_analyze_output_default_margins_keep_vertical_comparison_points(self):
         script = load_script()
         with tempfile.TemporaryDirectory() as tmp:
@@ -274,6 +300,7 @@ def write_synthetic_gaussian_output(
     x=None,
     y=None,
     zgrid=None,
+    e_multiplier=1.0,
 ):
     analytic = script.analytic
     if x is None:
@@ -316,9 +343,9 @@ def write_synthetic_gaussian_output(
         ds.createVariable("rho_charge", "f8", ("Time", "nCells", "nVertLevels"))[0, :, 0] = field.rho
         ds.createVariable("phi", "f8", ("Time", "nCells", "nVertLevels"))[0, :, 0] = field.phi
         e_vector = np.zeros((1, x.size, 1, 3))
-        e_vector[0, :, 0, 0] = field.ex
-        e_vector[0, :, 0, 1] = field.ey
-        e_vector[0, :, 0, 2] = field.ez
+        e_vector[0, :, 0, 0] = e_multiplier * field.ex
+        e_vector[0, :, 0, 1] = e_multiplier * field.ey
+        e_vector[0, :, 0, 2] = e_multiplier * field.ez
         ds.createVariable("E_vector", "f8", ("Time", "nCells", "nVertLevels", "R3"))[:, :, :, :] = e_vector
         ds.createVariable("cg_residual_final", "f8", ("Time",))[:] = [1.0e-12]
 

@@ -267,6 +267,41 @@ def representative_level(fields, center):
     return level, float(level_z[level])
 
 
+def vector_error_norms(actual_components, exact_components, weights, mask, *, relative_floor=0.0):
+    """Compute weighted norms for vector component errors."""
+    if relative_floor < 0.0:
+        raise ValueError("relative_floor must be nonnegative")
+    mask = np.asarray(mask, dtype=bool)
+    weights = np.asarray(weights, dtype=float)
+    if not np.any(mask):
+        raise ValueError("comparison mask is empty")
+    masked_weights = weights[mask]
+    if not np.all(np.isfinite(masked_weights)) or np.any(masked_weights < 0.0):
+        raise ValueError("masked weights must be finite and nonnegative")
+    masked_weight_sum = float(np.sum(masked_weights))
+    if masked_weight_sum == 0.0:
+        raise ValueError("masked weight sum must be nonzero")
+
+    error_squared = np.zeros_like(weights, dtype=float)
+    exact_squared = np.zeros_like(weights, dtype=float)
+    for actual, exact in zip(actual_components, exact_components):
+        actual = np.asarray(actual, dtype=float)
+        exact = np.asarray(exact, dtype=float)
+        error_squared = error_squared + (actual - exact) ** 2
+        exact_squared = exact_squared + exact**2
+
+    numerator = float(np.sum(masked_weights * error_squared[mask]))
+    denominator = float(np.sum(masked_weights * exact_squared[mask]))
+    if relative_floor > 0.0:
+        denominator = max(denominator, masked_weight_sum * relative_floor**2)
+    return {
+        "l2_absolute": float(np.sqrt(numerator)),
+        "l2_relative": float(np.sqrt(numerator / denominator)) if denominator > 0.0 else float("nan"),
+        "linf_absolute": float(np.max(np.sqrt(error_squared[mask]))),
+        "n": int(np.count_nonzero(mask)),
+    }
+
+
 def analyze_output(
     output_nc,
     summary_path,
@@ -320,11 +355,9 @@ def analyze_output(
         mask,
     )
 
-    e_mpas = np.sqrt(fields["ex"] ** 2 + fields["ey"] ** 2 + fields["ez"] ** 2)
-    e_exact = np.sqrt(exact.ex**2 + exact.ey**2 + exact.ez**2)
-    e_norms = analytic.weighted_error_norms(
-        e_mpas,
-        e_exact,
+    e_norms = vector_error_norms(
+        (fields["ex"], fields["ey"], fields["ez"]),
+        (exact.ex, exact.ey, exact.ez),
         fields["volume"],
         mask,
         relative_floor=e_relative_floor,
