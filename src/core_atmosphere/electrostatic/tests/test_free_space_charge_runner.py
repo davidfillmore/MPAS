@@ -6,6 +6,9 @@ import pathlib
 import tempfile
 import unittest
 
+import netCDF4 as nc
+import numpy as np
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[4]
 SCRIPT_PATH = (
@@ -131,10 +134,79 @@ class FreeSpaceChargeRunnerTests(unittest.TestCase):
             self.assertIn("phi", output_fields)
             self.assertIn("E_vector", output_fields)
 
-    def test_task4_module_has_no_executable_main(self):
+    def test_task5_module_has_executable_main(self):
         script = load_script()
 
-        self.assertFalse(hasattr(script, "main"))
+        self.assertTrue(hasattr(script, "main"))
+
+    def test_analyze_output_writes_summary_for_synthetic_exact_field(self):
+        script = load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            output = tmp_path / "output.nc"
+            summary = tmp_path / "summary.json"
+            plot = tmp_path / "plot.png"
+            write_synthetic_gaussian_output(output, script)
+
+            result = script.analyze_output(
+                output,
+                summary,
+                plot,
+                source="gaussian_monopole",
+                charge=2.0,
+                sigma=1000.0,
+                separation=4000.0,
+                boundary_margin=0.0,
+                core_radius=0.0,
+                e_relative_floor=0.0,
+            )
+
+            self.assertEqual(result["source"], "gaussian_monopole")
+            self.assertLess(result["phi_l2_relative"], 1.0e-12)
+            self.assertLess(result["e_l2_relative"], 1.0e-12)
+            self.assertTrue(summary.exists())
+            self.assertTrue(plot.exists())
+
+
+def write_synthetic_gaussian_output(path, script):
+    analytic = script.analytic
+    x = np.array([3000.0, 5000.0, 7000.0, 5000.0])
+    y = np.array([5000.0, 5000.0, 5000.0, 7000.0])
+    zgrid = np.array(
+        [
+            [4000.0, 4000.0, 4000.0, 6000.0],
+            [6000.0, 6000.0, 6000.0, 8000.0],
+        ]
+    )
+    zmid = 0.5 * (zgrid[0, :] + zgrid[1, :])
+    field = analytic.evaluate_gaussian_source(
+        "gaussian_monopole",
+        x,
+        y,
+        zmid,
+        center=(5000.0, 5000.0, 5000.0),
+        charge=2.0,
+        sigma=1000.0,
+        separation=4000.0,
+    )
+    with nc.Dataset(path, "w") as ds:
+        ds.createDimension("Time", 1)
+        ds.createDimension("nCells", 4)
+        ds.createDimension("nVertLevels", 1)
+        ds.createDimension("nVertLevelsP1", 2)
+        ds.createDimension("R3", 3)
+        ds.createVariable("xCell", "f8", ("nCells",))[:] = x
+        ds.createVariable("yCell", "f8", ("nCells",))[:] = y
+        ds.createVariable("areaCell", "f8", ("nCells",))[:] = np.ones(4)
+        ds.createVariable("zgrid", "f8", ("nCells", "nVertLevelsP1"))[:, :] = zgrid.T
+        ds.createVariable("rho_charge", "f8", ("Time", "nCells", "nVertLevels"))[0, :, 0] = field.rho
+        ds.createVariable("phi", "f8", ("Time", "nCells", "nVertLevels"))[0, :, 0] = field.phi
+        e_vector = np.zeros((1, 4, 1, 3))
+        e_vector[0, :, 0, 0] = field.ex
+        e_vector[0, :, 0, 1] = field.ey
+        e_vector[0, :, 0, 2] = field.ez
+        ds.createVariable("E_vector", "f8", ("Time", "nCells", "nVertLevels", "R3"))[:, :, :, :] = e_vector
+        ds.createVariable("cg_residual_final", "f8", ("Time",))[:] = [1.0e-12]
 
 
 if __name__ == "__main__":
