@@ -45,6 +45,7 @@ COUPLED_OUTPUT_FIELDS = (
     "yCell",
     "zgrid",
     "areaCell",
+    "rho",
     "w",
     "scalars",
     "rho_charge",

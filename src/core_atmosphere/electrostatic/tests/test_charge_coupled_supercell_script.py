@@ -62,7 +62,16 @@ class ChargeCoupledSupercellScriptTests(unittest.TestCase):
             script.ensure_coupled_output_stream_list(path)
             fields = [line.strip() for line in path.read_text().splitlines() if line.strip()]
 
-        for field in ("xtime", "w", "scalars", "rho_charge", "phi", "E_vector", "cg_residual_final"):
+        for field in (
+            "xtime",
+            "rho",
+            "w",
+            "scalars",
+            "rho_charge",
+            "phi",
+            "E_vector",
+            "cg_residual_final",
+        ):
             self.assertIn(field, fields)
             self.assertEqual(fields.count(field), 1)
         self.assertNotIn("theta", fields)
