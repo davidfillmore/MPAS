@@ -212,6 +212,9 @@ def read_plot_fields(output_nc):
         e_vector = read_e_vector(dataset)
 
     zmid = 0.5 * (zgrid[:-1, :] + zgrid[1:, :])
+    e_x = e_vector[0, :, :]
+    e_y = e_vector[1, :, :]
+    e_z = e_vector[2, :, :]
     e_mag = np.sqrt(np.sum(e_vector * e_vector, axis=0))
     mid_level = int(rho_charge.shape[0] // 2)
     indices = centerline_indices(x, y)
@@ -223,6 +226,9 @@ def read_plot_fields(output_nc):
         "zMid": zmid,
         "rho_charge": rho_charge,
         "phi": phi,
+        "E_x": e_x,
+        "E_y": e_y,
+        "E_z": e_z,
         "E_mag": e_mag,
         "mid_level": mid_level,
         "cross_section_cell_indices": indices,
@@ -252,6 +258,135 @@ def scatter_with_colorbar(fig, ax, x, y, values, title, xlabel, ylabel, cmap, no
     ax.set_ylabel(ylabel)
     ax.grid(True, linestyle=":", linewidth=0.4)
     fig.colorbar(artist, ax=ax, fraction=0.046, pad=0.04)
+
+
+def scalar_grid_from_samples(x, y, values, nx=80, ny=60):
+    """Interpolate scalar samples onto a regular grid for section plots."""
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    values = np.asarray(values, dtype=float).ravel()
+
+    valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(values)
+    if np.count_nonzero(valid) < 4:
+        return None
+
+    x = x[valid]
+    y = y[valid]
+    values = values[valid]
+    if np.max(x) <= np.min(x) or np.max(y) <= np.min(y):
+        return None
+
+    grid_x_1d = np.linspace(float(np.min(x)), float(np.max(x)), nx)
+    grid_y_1d = np.linspace(float(np.min(y)), float(np.max(y)), ny)
+    grid_x, grid_y = np.meshgrid(grid_x_1d, grid_y_1d)
+
+    from scipy.interpolate import griddata
+
+    points = np.column_stack((x, y))
+    grid_values = griddata(points, values, (grid_x, grid_y), method="linear")
+    if np.any(~np.isfinite(grid_values)):
+        nearest_values = griddata(points, values, (grid_x, grid_y), method="nearest")
+        grid_values = np.where(np.isfinite(grid_values), grid_values, nearest_values)
+
+    if not np.any(np.isfinite(grid_values)):
+        return None
+    return grid_x, grid_y, grid_values
+
+
+def interpolated_section_with_colorbar(
+    fig,
+    ax,
+    x,
+    y,
+    values,
+    title,
+    xlabel,
+    ylabel,
+    cmap,
+    norm=None,
+):
+    """Draw an interpolated scalar section, falling back to native scatter."""
+    grid = scalar_grid_from_samples(x, y, values)
+    if grid is None:
+        scatter_with_colorbar(fig, ax, x, y, values, title, xlabel, ylabel, cmap, norm)
+        return False
+
+    grid_x, grid_y, grid_values = grid
+    artist = ax.contourf(
+        grid_x,
+        grid_y,
+        grid_values,
+        levels=48,
+        cmap=cmap,
+        norm=norm,
+    )
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.grid(True, linestyle=":", linewidth=0.4)
+    fig.colorbar(artist, ax=ax, fraction=0.046, pad=0.04)
+    return True
+
+
+def stream_grid_from_samples(x, y, u, v, nx=60, ny=48):
+    """Interpolate vector samples onto a regular grid for streamplot."""
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    u = np.asarray(u, dtype=float).ravel()
+    v = np.asarray(v, dtype=float).ravel()
+
+    valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(u) & np.isfinite(v)
+    if np.count_nonzero(valid) < 4:
+        return None
+
+    x = x[valid]
+    y = y[valid]
+    u = u[valid]
+    v = v[valid]
+    if np.max(x) <= np.min(x) or np.max(y) <= np.min(y):
+        return None
+
+    grid_x_1d = np.linspace(float(np.min(x)), float(np.max(x)), nx)
+    grid_y_1d = np.linspace(float(np.min(y)), float(np.max(y)), ny)
+    grid_x, grid_y = np.meshgrid(grid_x_1d, grid_y_1d)
+
+    from scipy.interpolate import griddata
+
+    points = np.column_stack((x, y))
+    grid_u = griddata(points, u, (grid_x, grid_y), method="linear")
+    grid_v = griddata(points, v, (grid_x, grid_y), method="linear")
+
+    if np.any(~np.isfinite(grid_u)):
+        nearest_u = griddata(points, u, (grid_x, grid_y), method="nearest")
+        grid_u = np.where(np.isfinite(grid_u), grid_u, nearest_u)
+    if np.any(~np.isfinite(grid_v)):
+        nearest_v = griddata(points, v, (grid_x, grid_y), method="nearest")
+        grid_v = np.where(np.isfinite(grid_v), grid_v, nearest_v)
+
+    if not np.any(np.isfinite(grid_u) & np.isfinite(grid_v)):
+        return None
+    return grid_x, grid_y, grid_u, grid_v
+
+
+def overlay_field_lines(ax, x, y, u, v, nx=60, ny=48):
+    """Overlay electric-field streamlines on an existing axes."""
+    grid = stream_grid_from_samples(x, y, u, v, nx=nx, ny=ny)
+    if grid is None:
+        return False
+
+    grid_x, grid_y, grid_u, grid_v = grid
+    ax.streamplot(
+        grid_x[0, :],
+        grid_y[:, 0],
+        grid_u,
+        grid_v,
+        color="black",
+        density=1.0,
+        linewidth=0.55,
+        arrowsize=0.7,
+        minlength=0.08,
+    )
+    return True
 
 
 def plot_tripole_output(output_nc, plot_path):
@@ -289,10 +424,18 @@ def plot_tripole_output(output_nc, plot_path):
             cmap,
             norm,
         )
+        if field_name == "phi":
+            overlay_field_lines(
+                axes[0, col],
+                x_km,
+                y_km,
+                fields["E_x"][mid, :],
+                fields["E_y"][mid, :],
+            )
 
         section_values = values[:, section]
         section_y = np.broadcast_to(y_km[section][None, :], section_values.shape)
-        scatter_with_colorbar(
+        interpolated_section_with_colorbar(
             fig,
             axes[1, col],
             section_y.ravel(),
@@ -304,6 +447,14 @@ def plot_tripole_output(output_nc, plot_path):
             cmap,
             norm,
         )
+        if field_name == "phi":
+            overlay_field_lines(
+                axes[1, col],
+                section_y.ravel(),
+                z_km[:, section].ravel(),
+                fields["E_y"][:, section].ravel(),
+                fields["E_z"][:, section].ravel(),
+            )
 
     plot_path = plot_path.expanduser()
     plot_path.parent.mkdir(parents=True, exist_ok=True)

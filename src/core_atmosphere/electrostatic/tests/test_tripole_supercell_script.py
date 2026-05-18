@@ -70,6 +70,47 @@ class TripoleSupercellScriptTests(unittest.TestCase):
         self.assertTrue(np.allclose(fields["E_mag"], 3.0))
         self.assertEqual(fields["mid_level"], 1)
         self.assertEqual(fields["cross_section_cell_indices"].tolist(), [0, 2])
+        self.assertEqual(fields["E_x"].shape, (3, 4))
+        self.assertEqual(fields["E_y"].shape, (3, 4))
+        self.assertEqual(fields["E_z"].shape, (3, 4))
+        self.assertTrue(np.allclose(fields["E_x"], 1.0))
+        self.assertTrue(np.allclose(fields["E_y"], 2.0))
+        self.assertTrue(np.allclose(fields["E_z"], 2.0))
+
+    def test_stream_grid_from_samples_returns_regular_vectors(self):
+        script = load_script()
+
+        x = np.array([0.0, 1.0, 0.0, 1.0])
+        y = np.array([0.0, 0.0, 1.0, 1.0])
+        u = np.ones(4)
+        v = np.full(4, 2.0)
+
+        grid = script.stream_grid_from_samples(x, y, u, v, nx=5, ny=4)
+
+        self.assertIsNotNone(grid)
+        grid_x, grid_y, grid_u, grid_v = grid
+        self.assertEqual(grid_x.shape, (4, 5))
+        self.assertEqual(grid_y.shape, (4, 5))
+        self.assertEqual(grid_u.shape, (4, 5))
+        self.assertEqual(grid_v.shape, (4, 5))
+        self.assertTrue(np.allclose(grid_u, 1.0))
+        self.assertTrue(np.allclose(grid_v, 2.0))
+
+    def test_scalar_grid_from_samples_returns_regular_values(self):
+        script = load_script()
+
+        x = np.array([0.0, 1.0, 0.0, 1.0])
+        y = np.array([0.0, 0.0, 1.0, 1.0])
+        values = np.full(4, 5.0)
+
+        grid = script.scalar_grid_from_samples(x, y, values, nx=6, ny=5)
+
+        self.assertIsNotNone(grid)
+        grid_x, grid_y, grid_values = grid
+        self.assertEqual(grid_x.shape, (5, 6))
+        self.assertEqual(grid_y.shape, (5, 6))
+        self.assertEqual(grid_values.shape, (5, 6))
+        self.assertTrue(np.allclose(grid_values, 5.0))
 
     def test_plot_tripole_output_writes_png(self):
         script = load_script()
