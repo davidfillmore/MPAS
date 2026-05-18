@@ -80,6 +80,65 @@ class ChargeCoupledSupercellPlotTests(unittest.TestCase):
         self.assertTrue(np.allclose(y[:, 1], 1.0))
         self.assertTrue(np.allclose(z, fields["zMid"]))
 
+    def test_core_x_mean_section_uses_area_weighted_y_rows(self):
+        script = load_script()
+
+        fields = {
+            "xCell": np.array([0.0, 2.0, 0.0, 2.0]),
+            "yCell": np.array([0.0, 0.0, 1.0, 1.0]),
+            "areaCell": np.array([1.0, 3.0, 1.0, 3.0]),
+            "zMid": np.array([[0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]]),
+            "liquid_water_content": np.array(
+                [[10.0, 20.0, 30.0, 40.0], [50.0, 60.0, 70.0, 80.0]]
+            ),
+            "rho_charge": np.array(
+                [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]
+            ),
+            "phi": np.array(
+                [[-10.0, -20.0, -30.0, -40.0], [-50.0, -60.0, -70.0, -80.0]]
+            ),
+            "E_y": np.array(
+                [[0.0, 2.0, 4.0, 6.0], [8.0, 10.0, 12.0, 14.0]]
+            ),
+            "E_z": np.array(
+                [[1.0, 3.0, 5.0, 7.0], [9.0, 11.0, 13.0, 15.0]]
+            ),
+        }
+
+        section = script.core_x_mean_section(fields, core_half_width_m=2.0)
+
+        self.assertEqual(section["label"], "Core x Mean, Half-Width: 0.002 km")
+        self.assertTrue(np.allclose(section["y"], [[0.0, 1.0], [0.0, 1.0]]))
+        self.assertTrue(np.allclose(section["z"], [[0.0, 0.0], [1.0, 1.0]]))
+        self.assertTrue(np.allclose(section["liquid"], [[17.5, 37.5], [57.5, 77.5]]))
+        self.assertTrue(np.allclose(section["rho"], [[1.75, 3.75], [5.75, 7.75]]))
+        self.assertTrue(np.allclose(section["phi"], [[-17.5, -37.5], [-57.5, -77.5]]))
+        self.assertTrue(np.allclose(section["e_y"], [[1.5, 5.5], [9.5, 13.5]]))
+        self.assertTrue(np.allclose(section["e_z"], [[2.5, 6.5], [10.5, 14.5]]))
+
+    def test_select_plot_section_supports_slice_and_x_mean_modes(self):
+        script = load_script()
+
+        fields = {
+            "xCell": np.array([0.0, 1.0, 0.0, 1.0]),
+            "yCell": np.array([0.0, 0.0, 1.0, 1.0]),
+            "areaCell": np.ones(4),
+            "zMid": np.array([[0.5, 0.5, 0.5, 0.5], [1.5, 1.5, 1.5, 1.5]]),
+            "liquid_water_content": np.array([[0.0, 4.0, 0.0, 1.0], [0.0, 5.0, 0.0, 1.0]]),
+            "rho_charge": np.zeros((2, 4)),
+            "phi": np.zeros((2, 4)),
+            "E_y": np.zeros((2, 4)),
+            "E_z": np.zeros((2, 4)),
+        }
+
+        slice_section = script.select_plot_section(fields, "slice", 10.0)
+        x_mean_section = script.select_plot_section(fields, "xmean", 10.0)
+
+        self.assertIsNone(slice_section["label"])
+        self.assertEqual(slice_section["liquid"].shape, (2, 2))
+        self.assertEqual(x_mean_section["label"], "Core x Mean, Half-Width: 10 km")
+        self.assertEqual(x_mean_section["liquid"].shape, (2, 2))
+
     def test_signed_line_levels_scale_each_charge_sign_independently(self):
         script = load_script()
 
@@ -190,6 +249,34 @@ class ChargeCoupledSupercellPlotTests(unittest.TestCase):
             self.assertTrue(plot.exists())
             self.assertGreater(plot.stat().st_size, 0)
 
+    def test_plot_charge_coupled_output_writes_x_mean_png(self):
+        script = load_script()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            output = tmp_path / "output.nc"
+            plot = tmp_path / "charge_coupled_xmean.png"
+            write_synthetic_output(output)
+
+            result = script.plot_charge_coupled_output(
+                output,
+                plot,
+                section_mode="xmean",
+                core_half_width_km=10.0,
+            )
+
+            self.assertEqual(result, plot)
+            self.assertTrue(plot.exists())
+            self.assertGreater(plot.stat().st_size, 0)
+
+    def test_parse_args_accepts_x_mean_section_mode(self):
+        script = load_script()
+
+        args = script.parse_args(["--section-mode", "xmean", "--core-half-width-km", "12.5"])
+
+        self.assertEqual(args.section_mode, "xmean")
+        self.assertEqual(args.core_half_width_km, 12.5)
+
 
 def write_synthetic_output(path):
     x = np.array([0.0, 1.0, 0.0, 1.0])
@@ -231,6 +318,7 @@ def write_synthetic_output(path):
         ds.createVariable("xtime", "S1", ("Time", "StrLen"))[:] = xtime
         ds.createVariable("xCell", "f8", ("nCells",))[:] = x
         ds.createVariable("yCell", "f8", ("nCells",))[:] = y
+        ds.createVariable("areaCell", "f8", ("nCells",))[:] = np.array([1.0, 3.0, 1.0, 3.0])
         ds.createVariable("zgrid", "f8", ("nCells", "nVertLevelsP1"))[:] = zgrid
         ds.createVariable("qc", "f8", ("Time", "nCells", "nVertLevels"))[:] = qc
         ds.createVariable("qr", "f8", ("Time", "nCells", "nVertLevels"))[:] = qr

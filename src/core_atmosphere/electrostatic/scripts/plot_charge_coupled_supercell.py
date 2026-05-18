@@ -114,6 +114,13 @@ def read_cell(dataset, name):
     return data
 
 
+def read_optional_cell(dataset, name, size):
+    """Read an optional nCells variable or return unit weights."""
+    if name not in dataset.variables:
+        return np.ones(size, dtype=float)
+    return read_cell(dataset, name)
+
+
 def read_level_cell(dataset, name, level_dim="nVertLevels", time_index=-1):
     """Read a level-by-cell variable as (level, cell)."""
     data, dims = read_without_time(dataset, name, time_index=time_index)
@@ -147,6 +154,7 @@ def read_figure_fields(output_nc, time_index=-1):
         xtime = read_xtime(dataset, time_index=time_index)
         x_cell = read_cell(dataset, "xCell")
         y_cell = read_cell(dataset, "yCell")
+        area_cell = read_optional_cell(dataset, "areaCell", x_cell.size)
         zgrid = read_level_cell(dataset, "zgrid", level_dim="nVertLevelsP1")
         air_density = read_level_cell(dataset, "rho", time_index=time_index)
         qc = read_optional_level_cell(dataset, "qc", (zgrid.shape[0] - 1, x_cell.size), time_index)
@@ -163,6 +171,7 @@ def read_figure_fields(output_nc, time_index=-1):
     return {
         "xCell": x_cell,
         "yCell": y_cell,
+        "areaCell": area_cell,
         "zgrid": zgrid,
         "zMid": z_mid,
         "air_density": air_density,
@@ -183,6 +192,17 @@ def select_cross_section(fields):
     """Return cell indices for an x-slice through the strongest liquid column."""
     x = np.asarray(fields["xCell"], dtype=float)
     y = np.asarray(fields["yCell"], dtype=float)
+    x_slice = storm_core_x(fields)
+    atol = max(1.0e-8, 1.0e-8 * float(np.ptp(x)))
+    indices = np.where(np.isclose(x, x_slice, rtol=1.0e-8, atol=atol))[0]
+    if indices.size == 0:
+        indices = np.array([int(np.nanargmin(np.abs(x - x_slice)))])
+    return indices[np.argsort(y[indices])]
+
+
+def storm_core_x(fields):
+    """Return the x coordinate of the strongest liquid or charge column."""
+    x = np.asarray(fields["xCell"], dtype=float)
     liquid = np.asarray(fields["liquid_water_content"], dtype=float)
     rho = np.asarray(fields["rho_charge"], dtype=float)
 
@@ -193,12 +213,7 @@ def select_cross_section(fields):
         score = np.nanmax(np.abs(rho), axis=0)
 
     peak_cell = int(np.nanargmax(score))
-    x_slice = x[peak_cell]
-    atol = max(1.0e-8, 1.0e-8 * float(np.ptp(x)))
-    indices = np.where(np.isclose(x, x_slice, rtol=1.0e-8, atol=atol))[0]
-    if indices.size == 0:
-        indices = np.array([peak_cell])
-    return indices[np.argsort(y[indices])]
+    return float(x[peak_cell])
 
 
 def section_coordinates(fields, indices):
@@ -209,6 +224,106 @@ def section_coordinates(fields, indices):
     )
     z_section = np.asarray(fields["zMid"], dtype=float)[:, indices]
     return y_section, z_section
+
+
+def y_row_groups(y, indices):
+    """Group selected cell indices by nearly equal y coordinate."""
+    y = np.asarray(y, dtype=float)
+    indices = np.asarray(indices, dtype=int)
+    if indices.size == 0:
+        return []
+
+    ordered = indices[np.argsort(y[indices])]
+    tolerance = max(1.0e-8, 1.0e-8 * float(np.ptp(y[indices])))
+    groups = []
+    current = [int(ordered[0])]
+    current_y = float(y[ordered[0]])
+    for index in ordered[1:]:
+        if abs(float(y[index]) - current_y) <= tolerance:
+            current.append(int(index))
+        else:
+            groups.append(np.asarray(current, dtype=int))
+            current = [int(index)]
+            current_y = float(y[index])
+    groups.append(np.asarray(current, dtype=int))
+    return groups
+
+
+def clean_weights(area, group):
+    """Return positive finite area weights for one y-row group."""
+    weights = np.asarray(area, dtype=float)[group]
+    if weights.size == 0 or not np.all(np.isfinite(weights)) or float(np.sum(weights)) <= 0.0:
+        return np.ones(group.size, dtype=float)
+    return weights
+
+
+def weighted_row_mean(values, area, groups):
+    """Average level-cell values across x for each y-row group."""
+    values = np.asarray(values, dtype=float)
+    columns = []
+    for group in groups:
+        weights = clean_weights(area, group)
+        columns.append(np.average(values[:, group], axis=1, weights=weights))
+    if not columns:
+        return np.empty((values.shape[0], 0), dtype=float)
+    return np.column_stack(columns)
+
+
+def core_x_mean_section(fields, core_half_width_m):
+    """Return an area-weighted core-window x-mean y-z section."""
+    x = np.asarray(fields["xCell"], dtype=float)
+    y = np.asarray(fields["yCell"], dtype=float)
+    area = np.asarray(fields.get("areaCell", np.ones(x.size)), dtype=float)
+    core_x = storm_core_x(fields)
+    half_width = max(float(core_half_width_m), 0.0)
+    indices = np.where(np.abs(x - core_x) <= half_width)[0]
+    if indices.size == 0:
+        indices = np.array([int(np.nanargmin(np.abs(x - core_x)))])
+
+    groups = y_row_groups(y, indices)
+    y_values = np.asarray(
+        [np.average(y[group], weights=clean_weights(area, group)) for group in groups],
+        dtype=float,
+    )
+    z_values = weighted_row_mean(fields["zMid"], area, groups)
+    y_values = np.broadcast_to(y_values[None, :], z_values.shape)
+    half_width_km = half_width * KM_PER_M
+
+    return {
+        "label": f"Core x Mean, Half-Width: {half_width_km:g} km",
+        "y": y_values,
+        "z": z_values,
+        "liquid": weighted_row_mean(fields["liquid_water_content"], area, groups),
+        "rho": weighted_row_mean(fields["rho_charge"], area, groups),
+        "phi": weighted_row_mean(fields["phi"], area, groups),
+        "e_y": weighted_row_mean(fields["E_y"], area, groups),
+        "e_z": weighted_row_mean(fields["E_z"], area, groups),
+    }
+
+
+def slice_section(fields):
+    """Return the existing strongest-column x-slice section."""
+    section = select_cross_section(fields)
+    y_section, z_section = section_coordinates(fields, section)
+    return {
+        "label": None,
+        "y": y_section,
+        "z": z_section,
+        "liquid": fields["liquid_water_content"][:, section],
+        "rho": fields["rho_charge"][:, section],
+        "phi": fields["phi"][:, section],
+        "e_y": fields["E_y"][:, section],
+        "e_z": fields["E_z"][:, section],
+    }
+
+
+def select_plot_section(fields, section_mode, core_half_width_km):
+    """Return plot-ready section data for the requested section mode."""
+    if section_mode == "slice":
+        return slice_section(fields)
+    if section_mode == "xmean":
+        return core_x_mean_section(fields, core_half_width_km / KM_PER_M)
+    raise ValueError(f"Unsupported section mode {section_mode!r}")
 
 
 def centered_norm(values):
@@ -453,7 +568,14 @@ def style_section_axis(ax):
     ax.grid(True, linestyle=":", linewidth=0.35, alpha=0.55)
 
 
-def plot_charge_coupled_output(output_nc, plot_path, time_index=-1):
+def plot_charge_coupled_output(
+    output_nc,
+    plot_path,
+    time_index=-1,
+    *,
+    section_mode="slice",
+    core_half_width_km=10.0,
+):
     """Plot a two-panel water/charge and potential/field vertical section."""
     import matplotlib
 
@@ -462,22 +584,26 @@ def plot_charge_coupled_output(output_nc, plot_path, time_index=-1):
     from matplotlib.lines import Line2D
 
     fields = read_figure_fields(output_nc, time_index=time_index)
-    section = select_cross_section(fields)
-    y_section, z_section = section_coordinates(fields, section)
-    y_km = y_section * KM_PER_M
-    z_km = z_section * KM_PER_M
+    section = select_plot_section(fields, section_mode, core_half_width_km)
+    y_km = section["y"] * KM_PER_M
+    z_km = section["z"] * KM_PER_M
 
-    liquid = fields["liquid_water_content"][:, section] * G_PER_KG
-    rho = fields["rho_charge"][:, section] * NC_PER_C
-    phi = fields["phi"][:, section] * MV_PER_V
-    e_y = fields["E_y"][:, section]
-    e_z = fields["E_z"][:, section]
+    liquid = section["liquid"] * G_PER_KG
+    rho = section["rho"] * NC_PER_C
+    phi = section["phi"] * MV_PER_V
+    e_y = section["e_y"]
+    e_z = section["e_z"]
 
     fig, axes = plt.subplots(1, 2, figsize=(10.6, 4.35), sharey=True, constrained_layout=True)
     liquid_levels, liquid_ticks = positive_filled_levels(liquid)
     phi_levels, phi_ticks, phi_norm = signed_filled_levels(phi)
+    title_parts = []
     if fields["simulation_time_label"]:
-        fig.suptitle(fields["simulation_time_label"], fontsize=10, y=1.02)
+        title_parts.append(fields["simulation_time_label"])
+    if section["label"]:
+        title_parts.append(section["label"])
+    if title_parts:
+        fig.suptitle("; ".join(title_parts), fontsize=10, y=1.02)
 
     contourf_from_samples(
         fig,
@@ -589,6 +715,18 @@ def parse_args(argv=None):
         default=-1,
         help="Time record to plot, using Python indexing.",
     )
+    parser.add_argument(
+        "--section-mode",
+        choices=("slice", "xmean"),
+        default="slice",
+        help="Vertical section mode: strongest-column x slice or core-window x mean.",
+    )
+    parser.add_argument(
+        "--core-half-width-km",
+        type=float,
+        default=10.0,
+        help="Half-width of the x-mean storm-core window in km.",
+    )
     return parser.parse_args(argv)
 
 
@@ -596,7 +734,13 @@ def main(argv=None):
     args = parse_args(argv)
     output_nc = args.output_nc.expanduser()
     plot_path = args.plot.expanduser() if args.plot else default_plot_path(output_nc)
-    plot = plot_charge_coupled_output(output_nc, plot_path, time_index=args.time_index)
+    plot = plot_charge_coupled_output(
+        output_nc,
+        plot_path,
+        time_index=args.time_index,
+        section_mode=args.section_mode,
+        core_half_width_km=args.core_half_width_km,
+    )
     print(f"Wrote {plot}")
     return 0
 
