@@ -76,6 +76,11 @@ class FreeSpaceChargeRunnerTests(unittest.TestCase):
                     poisson_max_iter=5000,
                 )
 
+    def test_task4_module_has_no_executable_main(self):
+        script = load_script()
+
+        self.assertFalse(hasattr(script, "main"))
+
 
 if __name__ == "__main__":
     unittest.main()

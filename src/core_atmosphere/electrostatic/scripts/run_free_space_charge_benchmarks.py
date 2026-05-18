@@ -272,33 +272,3 @@ def parse_args(argv=None):
     if args.plot is None:
         args.plot = root / "results" / f"{args.source}_diagnostics.png"
     return args
-
-
-def main(argv=None):
-    args = parse_args(argv)
-    run_dir, partition = prepare_run_dir(
-        args.template_run_dir,
-        args.run_dir,
-        args.model,
-        args.ranks,
-        source=args.source,
-        charge=args.charge,
-        sigma=args.sigma,
-        separation=args.separation,
-        poisson_tol=args.poisson_tol,
-        poisson_max_iter=args.poisson_max_iter,
-    )
-
-    print(f"Prepared {run_dir}")
-    print(f"Using {partition.name} with {args.ranks} ranks")
-    if args.prepare_only:
-        return 0
-
-    if not args.analysis_only:
-        run_mpas(run_dir, args.ranks, args.mpiexec)
-
-    raise NotImplementedError("analysis and plotting are added in Task 5")
-
-
-if __name__ == "__main__":
-    sys.exit(main())
