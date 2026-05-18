@@ -231,6 +231,42 @@ def _broadcast_cell_coordinates(fields):
     return x, y
 
 
+def comparison_mask(
+    x,
+    y,
+    z,
+    *,
+    bounds,
+    centers,
+    sigma,
+    horizontal_boundary_margin,
+    vertical_boundary_margin,
+    core_radius=None,
+):
+    """Build the interior comparison mask with separate horizontal/vertical margins."""
+    (xmin, xmax), (ymin, ymax), (zmin, zmax) = bounds
+    mask = (
+        (x >= xmin + horizontal_boundary_margin)
+        & (x <= xmax - horizontal_boundary_margin)
+        & (y >= ymin + horizontal_boundary_margin)
+        & (y <= ymax - horizontal_boundary_margin)
+        & (z >= zmin + vertical_boundary_margin)
+        & (z <= zmax - vertical_boundary_margin)
+    )
+    exclusion_radius = core_radius if core_radius is not None else 3.0 * sigma
+    for cx, cy, cz in centers:
+        radius = np.sqrt((x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2)
+        mask = mask & (radius >= exclusion_radius)
+    return mask
+
+
+def representative_level(fields, center):
+    """Return the vertical level nearest the analytic center height."""
+    level_z = np.mean(fields["zmid"], axis=1)
+    level = int(np.argmin(np.abs(level_z - center[2])))
+    return level, float(level_z[level])
+
+
 def analyze_output(
     output_nc,
     summary_path,
@@ -241,6 +277,7 @@ def analyze_output(
     sigma,
     separation,
     boundary_margin,
+    vertical_boundary_margin=0.0,
     core_radius,
     e_relative_floor,
 ):
@@ -259,14 +296,15 @@ def analyze_output(
         separation=separation,
     )
     bounds = _field_bounds(fields)
-    mask = analytic.interior_comparison_mask(
+    mask = comparison_mask(
         x,
         y,
         fields["zmid"],
         bounds=bounds,
         centers=exact.centers,
         sigma=sigma,
-        boundary_margin=boundary_margin,
+        horizontal_boundary_margin=boundary_margin,
+        vertical_boundary_margin=vertical_boundary_margin,
         core_radius=core_radius,
     )
     phi_aligned, phi_offset = analytic.align_potential_gauge(
@@ -298,11 +336,13 @@ def analyze_output(
         "sigma": float(sigma),
         "separation": float(separation),
         "boundary_margin": float(boundary_margin),
+        "vertical_boundary_margin": float(vertical_boundary_margin),
         "core_radius": None if core_radius is None else float(core_radius),
         "e_relative_floor": float(e_relative_floor),
         "center": [float(value) for value in center],
         "bounds": [[float(lo), float(hi)] for lo, hi in bounds],
         "mask_count": int(np.count_nonzero(mask)),
+        "comparison_points": int(np.count_nonzero(mask)),
         "cell_count": int(mask.size),
         "phi_gauge_offset": float(phi_offset),
         "phi_l2_absolute": phi_norms["l2_absolute"],
@@ -313,19 +353,24 @@ def analyze_output(
         "e_linf_absolute": e_norms["linf_absolute"],
         "cg_residual_final": float(fields["residual"]),
     }
+    result["plot_level"], result["plot_z"] = representative_level(fields, center)
 
     summary_path = pathlib.Path(summary_path).expanduser()
     plot_path = pathlib.Path(plot_path).expanduser()
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     plot_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
-    plot_diagnostics(fields, exact, phi_aligned, mask, plot_path, source)
+    plot_diagnostics(
+        fields,
+        exact,
+        phi_aligned,
+        mask,
+        plot_path,
+        source,
+        result["plot_level"],
+        result["plot_z"],
+    )
     return result
-
-
-def _flatten_xy(fields):
-    x, y = _broadcast_cell_coordinates(fields)
-    return x.ravel(), y.ravel()
 
 
 def _normalized_quiver_components(ex, ey):
@@ -338,41 +383,42 @@ def _normalized_quiver_components(ex, ey):
     return u, v
 
 
-def plot_diagnostics(fields, exact, phi_aligned, mask, plot_path, source):
+def plot_diagnostics(fields, exact, phi_aligned, mask, plot_path, source, plot_level, plot_z):
     """Write a 2x4 scatter diagnostic figure for the free-space benchmark."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    x, y = _flatten_xy(fields)
+    x = fields["x"]
+    y = fields["y"]
     e_mpas = np.sqrt(fields["ex"] ** 2 + fields["ey"] ** 2 + fields["ez"] ** 2)
     e_exact = np.sqrt(exact.ex**2 + exact.ey**2 + exact.ez**2)
     panels = (
-        ("MPAS rho", fields["rho"]),
-        ("MPAS Phi", phi_aligned),
-        ("MPAS |E|", e_mpas),
-        ("Phi error", phi_aligned - exact.phi),
-        ("Analytic rho", exact.rho),
-        ("Analytic Phi", exact.phi),
-        ("Analytic |E|", e_exact),
-        ("Comparison mask", mask.astype(float)),
+        ("MPAS rho", fields["rho"][plot_level, :]),
+        ("MPAS Phi", phi_aligned[plot_level, :]),
+        ("MPAS |E|", e_mpas[plot_level, :]),
+        ("Phi error", (phi_aligned - exact.phi)[plot_level, :]),
+        ("Analytic rho", exact.rho[plot_level, :]),
+        ("Analytic Phi", exact.phi[plot_level, :]),
+        ("Analytic |E|", e_exact[plot_level, :]),
+        ("Comparison mask", mask[plot_level, :].astype(float)),
     )
 
     fig, axes = plt.subplots(2, 4, figsize=(16, 8), constrained_layout=True)
     for ax, (title, values) in zip(axes.flat, panels):
-        scatter = ax.scatter(x, y, c=np.asarray(values).ravel(), s=18, cmap="viridis")
+        scatter = ax.scatter(x, y, c=np.asarray(values), s=18, cmap="viridis")
         ax.set_title(title)
         ax.set_xlabel("xCell (m)")
         ax.set_ylabel("yCell (m)")
         ax.set_aspect("equal", adjustable="box")
         fig.colorbar(scatter, ax=ax, shrink=0.78)
 
-    mpas_u, mpas_v = _normalized_quiver_components(fields["ex"], fields["ey"])
-    exact_u, exact_v = _normalized_quiver_components(exact.ex, exact.ey)
-    axes.flat[1].quiver(x, y, mpas_u.ravel(), mpas_v.ravel(), color="black", scale=24.0, width=0.004)
-    axes.flat[5].quiver(x, y, exact_u.ravel(), exact_v.ravel(), color="black", scale=24.0, width=0.004)
-    fig.suptitle(f"Free-space charge diagnostics: {source}")
+    mpas_u, mpas_v = _normalized_quiver_components(fields["ex"][plot_level, :], fields["ey"][plot_level, :])
+    exact_u, exact_v = _normalized_quiver_components(exact.ex[plot_level, :], exact.ey[plot_level, :])
+    axes.flat[1].quiver(x, y, mpas_u, mpas_v, color="black", scale=24.0, width=0.004)
+    axes.flat[5].quiver(x, y, exact_u, exact_v, color="black", scale=24.0, width=0.004)
+    fig.suptitle(f"Free-space charge diagnostics: {source}, level {plot_level}, z={plot_z:g} m")
     fig.savefig(plot_path, dpi=150)
     plt.close(fig)
 
@@ -427,7 +473,13 @@ def parse_args(argv=None):
         "--boundary-margin",
         type=float,
         default=12000.0,
-        help="Interior comparison margin in meters for the follow-on analysis step.",
+        help="Horizontal interior comparison margin in meters for the analysis step.",
+    )
+    parser.add_argument(
+        "--vertical-boundary-margin",
+        type=float,
+        default=0.0,
+        help="Vertical interior comparison margin in meters for the analysis step.",
     )
     parser.add_argument(
         "--core-radius",
@@ -489,6 +541,26 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.analysis_only:
+        run_dir = args.run_dir.expanduser().resolve()
+        result = analyze_output(
+            run_dir / "output.nc",
+            args.summary,
+            args.plot,
+            source=args.source,
+            charge=args.charge,
+            sigma=args.sigma,
+            separation=args.separation,
+            boundary_margin=args.boundary_margin,
+            vertical_boundary_margin=args.vertical_boundary_margin,
+            core_radius=args.core_radius,
+            e_relative_floor=args.e_relative_floor,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        print(f"Wrote summary: {pathlib.Path(args.summary).expanduser()}")
+        print(f"Wrote plot: {pathlib.Path(args.plot).expanduser()}")
+        return 0
+
     run_dir, partition = prepare_run_dir(
         args.template_run_dir,
         args.run_dir,
@@ -506,8 +578,7 @@ def main(argv=None):
     if args.prepare_only:
         return 0
 
-    if not args.analysis_only:
-        run_mpas(run_dir, args.ranks, args.mpiexec)
+    run_mpas(run_dir, args.ranks, args.mpiexec)
 
     output_nc = run_dir / "output.nc"
     result = analyze_output(
@@ -519,6 +590,7 @@ def main(argv=None):
         sigma=args.sigma,
         separation=args.separation,
         boundary_margin=args.boundary_margin,
+        vertical_boundary_margin=args.vertical_boundary_margin,
         core_radius=args.core_radius,
         e_relative_floor=args.e_relative_floor,
     )

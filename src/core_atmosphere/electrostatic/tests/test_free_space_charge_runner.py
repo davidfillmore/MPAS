@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Tests for the free-space Gaussian charge benchmark runner."""
 
+import contextlib
 import importlib.util
+import io
 import pathlib
 import tempfile
 import unittest
@@ -171,41 +173,149 @@ class FreeSpaceChargeRunnerTests(unittest.TestCase):
             self.assertTrue(summary.exists())
             self.assertTrue(plot.exists())
 
+    def test_analyze_output_default_margins_keep_vertical_comparison_points(self):
+        script = load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            output = tmp_path / "output.nc"
+            summary = tmp_path / "summary.json"
+            plot = tmp_path / "plot.png"
+            args = script.parse_args(["--run-dir", str(tmp_path)])
+            write_synthetic_gaussian_output(
+                output,
+                script,
+                source=args.source,
+                charge=args.charge,
+                sigma=args.sigma,
+                separation=args.separation,
+                x=np.array([0.0, 25000.0, 50000.0, 25000.0, 25000.0, 25000.0]),
+                y=np.array([0.0, 13000.0, 50000.0, 37000.0, 25000.0, 21000.0]),
+                zgrid=np.array(
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [20000.0, 20000.0, 20000.0, 20000.0, 20000.0, 20000.0],
+                    ]
+                ),
+            )
 
-def write_synthetic_gaussian_output(path, script):
+            result = script.analyze_output(
+                output,
+                summary,
+                plot,
+                source=args.source,
+                charge=args.charge,
+                sigma=args.sigma,
+                separation=args.separation,
+                boundary_margin=args.boundary_margin,
+                vertical_boundary_margin=args.vertical_boundary_margin,
+                core_radius=args.core_radius,
+                e_relative_floor=args.e_relative_floor,
+            )
+
+            self.assertGreater(result["mask_count"], 0)
+            self.assertGreater(result["comparison_points"], 0)
+            self.assertTrue(np.isfinite(result["phi_l2_relative"]))
+            self.assertTrue(np.isfinite(result["e_l2_relative"]))
+            self.assertEqual(result["plot_z"], 10000.0)
+
+    def test_analysis_only_main_skips_prepare_run_dir(self):
+        script = load_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            run_dir = tmp_path / "run"
+            run_dir.mkdir()
+            output = run_dir / "output.nc"
+            summary = tmp_path / "summary.json"
+            plot = tmp_path / "plot.png"
+            write_synthetic_gaussian_output(output, script)
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                status = script.main(
+                    [
+                        "--analysis-only",
+                        "--run-dir",
+                        str(run_dir),
+                        "--template-run-dir",
+                        str(tmp_path / "missing-template"),
+                        "--model",
+                        str(tmp_path / "missing-model"),
+                        "--source",
+                        "gaussian_monopole",
+                        "--charge",
+                        "2.0",
+                        "--sigma",
+                        "1000.0",
+                        "--separation",
+                        "4000.0",
+                        "--boundary-margin",
+                        "0.0",
+                        "--core-radius",
+                        "0.0",
+                        "--summary",
+                        str(summary),
+                        "--plot",
+                        str(plot),
+                    ]
+                )
+
+            self.assertEqual(status, 0)
+            self.assertTrue(summary.exists())
+            self.assertTrue(plot.exists())
+
+
+def write_synthetic_gaussian_output(
+    path,
+    script,
+    *,
+    source="gaussian_monopole",
+    charge=2.0,
+    sigma=1000.0,
+    separation=4000.0,
+    x=None,
+    y=None,
+    zgrid=None,
+):
     analytic = script.analytic
-    x = np.array([3000.0, 5000.0, 7000.0, 5000.0])
-    y = np.array([3000.0, 5000.0, 7000.0, 5000.0])
-    zgrid = np.array(
-        [
-            [4000.0, 4000.0, 4000.0, 4000.0],
-            [6000.0, 6000.0, 6000.0, 6000.0],
-        ]
+    if x is None:
+        x = np.array([3000.0, 5000.0, 7000.0, 5000.0])
+    if y is None:
+        y = np.array([3000.0, 5000.0, 7000.0, 5000.0])
+    if zgrid is None:
+        zgrid = np.array(
+            [
+                [4000.0, 4000.0, 4000.0, 4000.0],
+                [6000.0, 6000.0, 6000.0, 6000.0],
+            ]
+        )
+    center = (
+        0.5 * (float(np.min(x)) + float(np.max(x))),
+        0.5 * (float(np.min(y)) + float(np.max(y))),
+        0.5 * (float(np.min(zgrid)) + float(np.max(zgrid))),
     )
     zmid = 0.5 * (zgrid[0, :] + zgrid[1, :])
     field = analytic.evaluate_gaussian_source(
-        "gaussian_monopole",
+        source,
         x,
         y,
         zmid,
-        center=(5000.0, 5000.0, 5000.0),
-        charge=2.0,
-        sigma=1000.0,
-        separation=4000.0,
+        center=center,
+        charge=charge,
+        sigma=sigma,
+        separation=separation,
     )
     with nc.Dataset(path, "w") as ds:
         ds.createDimension("Time", 1)
-        ds.createDimension("nCells", 4)
+        ds.createDimension("nCells", x.size)
         ds.createDimension("nVertLevels", 1)
         ds.createDimension("nVertLevelsP1", 2)
         ds.createDimension("R3", 3)
         ds.createVariable("xCell", "f8", ("nCells",))[:] = x
         ds.createVariable("yCell", "f8", ("nCells",))[:] = y
-        ds.createVariable("areaCell", "f8", ("nCells",))[:] = np.ones(4)
+        ds.createVariable("areaCell", "f8", ("nCells",))[:] = np.ones(x.size)
         ds.createVariable("zgrid", "f8", ("nCells", "nVertLevelsP1"))[:, :] = zgrid.T
         ds.createVariable("rho_charge", "f8", ("Time", "nCells", "nVertLevels"))[0, :, 0] = field.rho
         ds.createVariable("phi", "f8", ("Time", "nCells", "nVertLevels"))[0, :, 0] = field.phi
-        e_vector = np.zeros((1, 4, 1, 3))
+        e_vector = np.zeros((1, x.size, 1, 3))
         e_vector[0, :, 0, 0] = field.ex
         e_vector[0, :, 0, 1] = field.ey
         e_vector[0, :, 0, 2] = field.ez
