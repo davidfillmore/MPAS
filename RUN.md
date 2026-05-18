@@ -423,6 +423,43 @@ The synthetic dipole and tripole centers are computed once from the owned-cell
 mesh extent across the full MPI domain, so decomposed runs do not duplicate the
 source around block-local centers.
 
+## Poisson Interior Free-Space Charge Benchmarks
+
+The free-space charge benchmark helper runs smooth Gaussian monopole and dipole
+sources on the isolated supercell mesh. It compares the interior MPAS `Phi` and
+vector `E` against analytic free-space Gaussian charge fields, using the
+domain-midpoint analytic source center.
+
+The analysis excludes a horizontal boundary layer, an optional vertical
+boundary layer, and the charge core before computing error norms. For `Phi`,
+one constant potential offset is removed before comparison. For `E`, the
+comparison uses the vector electric field components rather than only `|E|`.
+
+The default horizontal dipole smoke command is:
+
+```bash
+~/miniconda3/envs/mpas/bin/python \
+  src/core_atmosphere/electrostatic/scripts/run_free_space_charge_benchmarks.py \
+  --source gaussian_dipole_y \
+  --template-run-dir ~/Data/MPAS/supercell \
+  --ranks 8 \
+  --model ./atmosphere_model
+```
+
+Run products are written under the source-specific run directory, for example
+`~/Data/MPAS/poisson_free_space_charge/gaussian_dipole_y/run/output.nc` and
+`~/Data/MPAS/poisson_free_space_charge/gaussian_dipole_y/run/run.out`.
+Summary JSON and plots are written under
+`~/Data/MPAS/poisson_free_space_charge/results/`. Other source modes are
+`gaussian_monopole` and `gaussian_dipole_z`; repeat the smoke command with
+those `--source` values for the full three-case check.
+
+Useful parameters include `--sigma`, `--charge`, `--separation`,
+`--boundary-margin`, `--vertical-boundary-margin`, `--core-radius`,
+`--e-relative-floor`, `--analysis-only`, `--prepare-only`, `--run-dir`,
+`--summary`, and `--plot`. Use `--analysis-only` to regenerate a summary and
+plot from an existing per-source `run/output.nc`.
+
 ## Test Case Data
 
 Idealized test case data is downloaded from
