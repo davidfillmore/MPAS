@@ -141,6 +141,33 @@ class FreeSpaceChargeRunnerTests(unittest.TestCase):
 
         self.assertTrue(hasattr(script, "main"))
 
+    def test_quiver_sample_indices_caps_dense_overlay(self):
+        script = load_script()
+        xg, yg = np.meshgrid(np.linspace(0.0, 10.0, 50), np.linspace(0.0, 8.0, 40))
+        x = xg.ravel()
+        y = yg.ravel()
+        u = np.ones_like(x)
+        v = np.zeros_like(y)
+
+        selected = script._quiver_sample_indices(x, y, u, v, max_vectors=100)
+
+        self.assertLessEqual(selected.size, 100)
+        self.assertEqual(np.unique(selected).size, selected.size)
+        self.assertTrue(np.all(selected >= 0))
+        self.assertTrue(np.all(selected < x.size))
+
+    def test_quiver_sample_indices_ignores_zero_vectors(self):
+        script = load_script()
+
+        selected = script._quiver_sample_indices(
+            np.array([0.0, 1.0]),
+            np.array([0.0, 1.0]),
+            np.zeros(2),
+            np.zeros(2),
+        )
+
+        self.assertEqual(selected.size, 0)
+
     def test_analyze_output_writes_summary_for_synthetic_exact_field(self):
         script = load_script()
         with tempfile.TemporaryDirectory() as tmp:

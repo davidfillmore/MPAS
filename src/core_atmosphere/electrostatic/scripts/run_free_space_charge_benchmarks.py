@@ -31,6 +31,9 @@ from run_tripole_supercell import ensure_output_stream_list, seed_run_dir_from_t
 
 
 SOURCES = analytic.SOURCES
+KM_PER_M = 1.0e-3
+SCIENTIFIC_POWER_LIMITS = (-2, 3)
+MAX_QUIVER_VECTORS = 441
 
 ELECTROSTATIC_CONFIG = (
     ("config_electrostatic_enable", ".true."),
@@ -416,6 +419,109 @@ def _normalized_quiver_components(ex, ey):
     return u, v
 
 
+def _quiver_sample_indices(x, y, u, v, max_vectors=MAX_QUIVER_VECTORS):
+    """Return spatially distributed vector indices for readable quiver overlays."""
+    if max_vectors < 1:
+        raise ValueError("max_vectors must be positive")
+
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    u = np.asarray(u, dtype=float)
+    v = np.asarray(v, dtype=float)
+    if not (x.shape == y.shape == u.shape == v.shape):
+        raise ValueError("x, y, u, and v must have matching shapes")
+
+    magnitude = np.sqrt(u * u + v * v)
+    valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(u) & np.isfinite(v) & (magnitude > 0.0)
+    valid_indices = np.flatnonzero(valid)
+    if valid_indices.size <= max_vectors:
+        return valid_indices
+
+    bins = max(1, int(np.floor(np.sqrt(max_vectors))))
+    xv = x[valid_indices]
+    yv = y[valid_indices]
+    xmin = float(np.min(xv))
+    xmax = float(np.max(xv))
+    ymin = float(np.min(yv))
+    ymax = float(np.max(yv))
+    x_span = xmax - xmin
+    y_span = ymax - ymin
+    if x_span == 0.0 or y_span == 0.0:
+        stride = int(np.ceil(valid_indices.size / max_vectors))
+        return valid_indices[::stride][:max_vectors]
+
+    xbin = np.floor((xv - xmin) / x_span * bins).astype(int)
+    ybin = np.floor((yv - ymin) / y_span * bins).astype(int)
+    xbin = np.clip(xbin, 0, bins - 1)
+    ybin = np.clip(ybin, 0, bins - 1)
+    bin_id = xbin * bins + ybin
+
+    selected = []
+    for current_bin in np.unique(bin_id):
+        candidates = np.flatnonzero(bin_id == current_bin)
+        bx = current_bin // bins
+        by = current_bin % bins
+        cx = xmin + (float(bx) + 0.5) * x_span / bins
+        cy = ymin + (float(by) + 0.5) * y_span / bins
+        distance2 = (xv[candidates] - cx) ** 2 + (yv[candidates] - cy) ** 2
+        selected.append(valid_indices[candidates[int(np.argmin(distance2))]])
+    return np.asarray(selected, dtype=int)
+
+
+def _scientific_scalar_formatter():
+    """Return the plot formatter used for compact scientific colorbar labels."""
+    import matplotlib.ticker as mticker
+
+    formatter = mticker.ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits(SCIENTIFIC_POWER_LIMITS)
+    formatter.set_useOffset(False)
+    return formatter
+
+
+def _symmetric_norm(values):
+    """Return a zero-centered norm for signed fields when a finite range exists."""
+    import matplotlib.colors as mcolors
+
+    values = np.asarray(values, dtype=float)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return None
+    limit = float(np.max(np.abs(finite)))
+    if limit == 0.0:
+        return None
+    return mcolors.TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit)
+
+
+def _scatter_panel(fig, ax, x, y, values, *, title, cmap, norm=None):
+    scatter = ax.scatter(x, y, c=np.asarray(values), s=18, cmap=cmap, norm=norm)
+    ax.set_title(title)
+    ax.set_xlabel("xCell (km)")
+    ax.set_ylabel("yCell (km)")
+    ax.set_aspect("equal", adjustable="box")
+    fig.colorbar(scatter, ax=ax, shrink=0.78, format=_scientific_scalar_formatter())
+    return scatter
+
+
+def _overlay_quiver(ax, x, y, u, v):
+    indices = _quiver_sample_indices(x, y, u, v)
+    if indices.size == 0:
+        return None
+    return ax.quiver(
+        x[indices],
+        y[indices],
+        u[indices],
+        v[indices],
+        color="black",
+        alpha=0.55,
+        angles="xy",
+        scale_units="width",
+        scale=32.0,
+        width=0.002,
+        pivot="middle",
+    )
+
+
 def plot_diagnostics(fields, exact, phi_aligned, mask, plot_path, source, plot_level, plot_z):
     """Write a 2x4 scatter diagnostic figure for the free-space benchmark."""
     import matplotlib
@@ -423,35 +529,39 @@ def plot_diagnostics(fields, exact, phi_aligned, mask, plot_path, source, plot_l
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    x = fields["x"]
-    y = fields["y"]
+    x = KM_PER_M * fields["x"]
+    y = KM_PER_M * fields["y"]
     e_mpas = np.sqrt(fields["ex"] ** 2 + fields["ey"] ** 2 + fields["ez"] ** 2)
     e_exact = np.sqrt(exact.ex**2 + exact.ey**2 + exact.ez**2)
     panels = (
-        ("MPAS rho", fields["rho"][plot_level, :]),
-        ("MPAS Phi", phi_aligned[plot_level, :]),
-        ("MPAS |E|", e_mpas[plot_level, :]),
-        ("Phi error", (phi_aligned - exact.phi)[plot_level, :]),
-        ("Analytic rho", exact.rho[plot_level, :]),
-        ("Analytic Phi", exact.phi[plot_level, :]),
-        ("Analytic |E|", e_exact[plot_level, :]),
-        ("Comparison mask", mask[plot_level, :].astype(float)),
+        ("MPAS rho", fields["rho"][plot_level, :], "RdBu_r", True),
+        ("MPAS Phi", phi_aligned[plot_level, :], "RdBu_r", True),
+        ("MPAS |E|", e_mpas[plot_level, :], "viridis", False),
+        ("Phi error", (phi_aligned - exact.phi)[plot_level, :], "RdBu_r", True),
+        ("Analytic rho", exact.rho[plot_level, :], "RdBu_r", True),
+        ("Analytic Phi", exact.phi[plot_level, :], "RdBu_r", True),
+        ("Analytic |E|", e_exact[plot_level, :], "viridis", False),
+        ("Comparison mask", mask[plot_level, :].astype(float), "viridis", False),
     )
 
     fig, axes = plt.subplots(2, 4, figsize=(16, 8), constrained_layout=True)
-    for ax, (title, values) in zip(axes.flat, panels):
-        scatter = ax.scatter(x, y, c=np.asarray(values), s=18, cmap="viridis")
-        ax.set_title(title)
-        ax.set_xlabel("xCell (m)")
-        ax.set_ylabel("yCell (m)")
-        ax.set_aspect("equal", adjustable="box")
-        fig.colorbar(scatter, ax=ax, shrink=0.78)
+    for ax, (title, values, cmap, signed) in zip(axes.flat, panels):
+        _scatter_panel(
+            fig,
+            ax,
+            x,
+            y,
+            values,
+            title=title,
+            cmap=cmap,
+            norm=_symmetric_norm(values) if signed else None,
+        )
 
     mpas_u, mpas_v = _normalized_quiver_components(fields["ex"][plot_level, :], fields["ey"][plot_level, :])
     exact_u, exact_v = _normalized_quiver_components(exact.ex[plot_level, :], exact.ey[plot_level, :])
-    axes.flat[1].quiver(x, y, mpas_u, mpas_v, color="black", scale=24.0, width=0.004)
-    axes.flat[5].quiver(x, y, exact_u, exact_v, color="black", scale=24.0, width=0.004)
-    fig.suptitle(f"Free-space charge diagnostics: {source}, level {plot_level}, z={plot_z:g} m")
+    _overlay_quiver(axes.flat[1], x, y, mpas_u, mpas_v)
+    _overlay_quiver(axes.flat[5], x, y, exact_u, exact_v)
+    fig.suptitle(f"Free-space charge diagnostics: {source}, level {plot_level}, z={KM_PER_M * plot_z:g} km")
     fig.savefig(plot_path, dpi=150)
     plt.close(fig)
 
