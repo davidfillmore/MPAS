@@ -31,7 +31,10 @@ module mpas_electrostatic_driver
                                          electrostatic_fill_mms_sphere_source, &
                                          electrostatic_fill_mms_sphere_horizontal_source, &
                                          electrostatic_fill_dipole_source, &
-                                         electrostatic_fill_tripole_source
+                                         electrostatic_fill_tripole_source, &
+                                         electrostatic_fill_gaussian_monopole_source, &
+                                         electrostatic_fill_gaussian_dipole_y_source, &
+                                         electrostatic_fill_gaussian_dipole_z_source
 
    implicit none
    private
@@ -402,6 +405,7 @@ contains
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, rho_charge
       real(kind=RKIND), pointer :: phi_ground
+      real(kind=RKIND), pointer :: source_charge, source_sigma, dipole_separation
       character(len=StrKIND), pointer :: source_name
 
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
@@ -422,6 +426,9 @@ contains
 
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_source', source_name)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_bc_ground', phi_ground)
+      call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_source_charge', source_charge)
+      call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_source_sigma', source_sigma)
+      call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_dipole_separation', dipole_separation)
 
       call fill_z_mid(nCells, nVertLevels, zgrid, state_ptr % zMid)
 
@@ -456,6 +463,23 @@ contains
          call electrostatic_fill_tripole_source(nCells, nVertLevels, xCell, yCell, &
                                                 state_ptr % zMid, state_ptr % source_x0, &
                                                 state_ptr % source_y0, rho_charge)
+      case ('gaussian_monopole')
+         call electrostatic_fill_gaussian_monopole_source(nCells, nVertLevels, xCell, yCell, &
+                                                          state_ptr % zMid, state_ptr % source_x0, &
+                                                          state_ptr % source_y0, 0.5_RKIND * state_ptr % z_top, &
+                                                          source_charge, source_sigma, rho_charge)
+      case ('gaussian_dipole_y')
+         call electrostatic_fill_gaussian_dipole_y_source(nCells, nVertLevels, xCell, yCell, &
+                                                          state_ptr % zMid, state_ptr % source_x0, &
+                                                          state_ptr % source_y0, 0.5_RKIND * state_ptr % z_top, &
+                                                          source_charge, source_sigma, dipole_separation, &
+                                                          rho_charge)
+      case ('gaussian_dipole_z')
+         call electrostatic_fill_gaussian_dipole_z_source(nCells, nVertLevels, xCell, yCell, &
+                                                          state_ptr % zMid, state_ptr % source_x0, &
+                                                          state_ptr % source_y0, 0.5_RKIND * state_ptr % z_top, &
+                                                          source_charge, source_sigma, dipole_separation, &
+                                                          rho_charge)
       case default
          call electrostatic_fill_mms_cart_source(nCells, nVertLevels, xCell, yCell, state_ptr % zMid, &
                                                  epsilon0, state_ptr % x_period, state_ptr % y_period, &
