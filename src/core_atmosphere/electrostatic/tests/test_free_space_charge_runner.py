@@ -168,6 +168,30 @@ class FreeSpaceChargeRunnerTests(unittest.TestCase):
 
         self.assertEqual(selected.size, 0)
 
+    def test_shared_scalar_norm_uses_combined_pair_range(self):
+        script = load_script()
+
+        norm = script._shared_scalar_norm(
+            np.array([0.0, 2.0]),
+            np.array([1.0, 4.0]),
+        )
+
+        self.assertEqual(norm.vmin, 0.0)
+        self.assertEqual(norm.vmax, 4.0)
+
+    def test_shared_scalar_norm_centers_signed_pair_on_zero(self):
+        script = load_script()
+
+        norm = script._shared_scalar_norm(
+            np.array([-2.0, 1.0]),
+            np.array([-1.0, 3.0]),
+            signed=True,
+        )
+
+        self.assertEqual(norm.vmin, -3.0)
+        self.assertEqual(norm.vcenter, 0.0)
+        self.assertEqual(norm.vmax, 3.0)
+
     def test_analyze_output_writes_summary_for_synthetic_exact_field(self):
         script = load_script()
         with tempfile.TemporaryDirectory() as tmp:

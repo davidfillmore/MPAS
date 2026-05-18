@@ -479,18 +479,30 @@ def _scientific_scalar_formatter():
     return formatter
 
 
-def _symmetric_norm(values):
-    """Return a zero-centered norm for signed fields when a finite range exists."""
+def _shared_scalar_norm(*arrays, signed=False):
+    """Return a shared color normalization for one comparable field group."""
     import matplotlib.colors as mcolors
 
-    values = np.asarray(values, dtype=float)
-    finite = values[np.isfinite(values)]
+    finite_parts = []
+    for values in arrays:
+        values = np.asarray(values, dtype=float)
+        finite_parts.append(values[np.isfinite(values)])
+    finite_parts = [values for values in finite_parts if values.size > 0]
+    if not finite_parts:
+        return None
+    finite = np.concatenate(finite_parts)
     if finite.size == 0:
         return None
-    limit = float(np.max(np.abs(finite)))
-    if limit == 0.0:
+    vmin = float(np.min(finite))
+    vmax = float(np.max(finite))
+    if vmin == vmax:
         return None
-    return mcolors.TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit)
+    if signed:
+        limit = float(np.max(np.abs(finite)))
+        if limit == 0.0:
+            return None
+        return mcolors.TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit)
+    return mcolors.Normalize(vmin=vmin, vmax=vmax)
 
 
 def _scatter_panel(fig, ax, x, y, values, *, title, cmap, norm=None):
@@ -533,19 +545,30 @@ def plot_diagnostics(fields, exact, phi_aligned, mask, plot_path, source, plot_l
     y = KM_PER_M * fields["y"]
     e_mpas = np.sqrt(fields["ex"] ** 2 + fields["ey"] ** 2 + fields["ez"] ** 2)
     e_exact = np.sqrt(exact.ex**2 + exact.ey**2 + exact.ez**2)
+    mpas_rho = fields["rho"][plot_level, :]
+    analytic_rho = exact.rho[plot_level, :]
+    mpas_phi = phi_aligned[plot_level, :]
+    analytic_phi = exact.phi[plot_level, :]
+    mpas_e = e_mpas[plot_level, :]
+    analytic_e = e_exact[plot_level, :]
+    phi_error = (phi_aligned - exact.phi)[plot_level, :]
+    mask_values = mask[plot_level, :].astype(float)
+    rho_norm = _shared_scalar_norm(mpas_rho, analytic_rho, signed=True)
+    phi_norm = _shared_scalar_norm(mpas_phi, analytic_phi, signed=True)
+    e_norm = _shared_scalar_norm(mpas_e, analytic_e)
     panels = (
-        ("MPAS rho", fields["rho"][plot_level, :], "RdBu_r", True),
-        ("MPAS Phi", phi_aligned[plot_level, :], "RdBu_r", True),
-        ("MPAS |E|", e_mpas[plot_level, :], "viridis", False),
-        ("Phi error", (phi_aligned - exact.phi)[plot_level, :], "RdBu_r", True),
-        ("Analytic rho", exact.rho[plot_level, :], "RdBu_r", True),
-        ("Analytic Phi", exact.phi[plot_level, :], "RdBu_r", True),
-        ("Analytic |E|", e_exact[plot_level, :], "viridis", False),
-        ("Comparison mask", mask[plot_level, :].astype(float), "viridis", False),
+        ("MPAS rho", mpas_rho, "RdBu_r", rho_norm),
+        ("MPAS Phi", mpas_phi, "RdBu_r", phi_norm),
+        ("MPAS |E|", mpas_e, "viridis", e_norm),
+        ("Phi error", phi_error, "RdBu_r", _shared_scalar_norm(phi_error, signed=True)),
+        ("Analytic rho", analytic_rho, "RdBu_r", rho_norm),
+        ("Analytic Phi", analytic_phi, "RdBu_r", phi_norm),
+        ("Analytic |E|", analytic_e, "viridis", e_norm),
+        ("Comparison mask", mask_values, "viridis", _shared_scalar_norm(mask_values)),
     )
 
     fig, axes = plt.subplots(2, 4, figsize=(16, 8), constrained_layout=True)
-    for ax, (title, values, cmap, signed) in zip(axes.flat, panels):
+    for ax, (title, values, cmap, norm) in zip(axes.flat, panels):
         _scatter_panel(
             fig,
             ax,
@@ -554,7 +577,7 @@ def plot_diagnostics(fields, exact, phi_aligned, mask, plot_path, source, plot_l
             values,
             title=title,
             cmap=cmap,
-            norm=_symmetric_norm(values) if signed else None,
+            norm=norm,
         )
 
     mpas_u, mpas_v = _normalized_quiver_components(fields["ex"][plot_level, :], fields["ey"][plot_level, :])
