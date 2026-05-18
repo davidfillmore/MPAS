@@ -344,6 +344,27 @@ Focused Python helper checks are also available without building MPAS-A:
   src/core_atmosphere/electrostatic/tests/test_tier_A2_defect_correction.py
 ```
 
+On the local macOS host, the `mpas` conda environment supplies Python packages
+for these helper scripts. It does not supply the Fortran MPI wrapper used by
+the MPAS build.
+
+Focused Fortran tests must use the same compiler family as the current MPAS
+build. On the local macOS LLVM tree, do not run the standalone test Makefile
+with a gfortran-backed wrapper against flang-built `.mod` files. Use:
+
+```bash
+OMPI_FC=flang OMPI_CC=clang OMPI_CXX=clang++ \
+  make -C src/core_atmosphere/electrostatic/tests FC=mpifort test_mms_source
+
+src/core_atmosphere/electrostatic/tests/test_mms_source
+```
+
+Use the same `OMPI_FC=flang OMPI_CC=clang OMPI_CXX=clang++` prefix for the
+other standalone electrostatic Fortran tests in that directory. If the full
+tree was rebuilt with a gfortran toolchain instead, rebuild the electrostatic
+objects and tests with the same gfortran MPI wrapper; never mix `.mod` files
+between compiler families.
+
 GitHub Actions runs these Python helper checks on changes to the
 electrostatic scripts/tests and Poisson documentation. The CI job installs
 only `netCDF4`, `numpy`, and `scipy`; full MPAS-A builds and mesh-generation

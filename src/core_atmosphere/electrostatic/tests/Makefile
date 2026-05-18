@@ -1,4 +1,8 @@
-FC ?= mpifort
+# GNU make has a built-in FC=f77, so use a normal assignment here. Command-line
+# overrides such as `make FC=...` still work. On the local macOS LLVM build,
+# run this Makefile with OMPI_FC=flang so the test compiler matches the
+# flang-built MPAS module files.
+FC = mpifort
 FFLAGS ?= -O0 -g -fconvert=big-endian -ffree-form -fdefault-real-8 -fdefault-double-8
 
 MPAS_ROOT := ../../../..
