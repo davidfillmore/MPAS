@@ -58,19 +58,37 @@ def gaussian_lobe_phi_e(x, y, z, *, center, charge, sigma):
     ez = np.zeros_like(r, dtype=float)
 
     nonzero = r > 0.0
-    erf_values = _erf_array(a * r[nonzero])
-    phi[nonzero] = prefactor * erf_values / r[nonzero]
+    scaled_r = r / sigma
+    small = nonzero & (scaled_r < 1.0e-4)
+    regular = nonzero & ~small
+
+    small_u = scaled_r[small]
+    small_u2 = small_u * small_u
+    phi[small] = (
+        prefactor
+        * math.sqrt(2.0 / math.pi)
+        / sigma
+        * (1.0 - small_u2 / 6.0 + small_u2 * small_u2 / 40.0)
+    )
+    erf_values = _erf_array(a * r[regular])
+    phi[regular] = prefactor * erf_values / r[regular]
     phi[~nonzero] = prefactor * math.sqrt(2.0 / math.pi) / sigma
 
     bracket = np.zeros_like(r, dtype=float)
-    bracket[nonzero] = (
-        erf_values / r[nonzero] ** 2
+    bracket[regular] = (
+        erf_values / r[regular] ** 2
         - math.sqrt(2.0 / math.pi)
-        * np.exp(-(r[nonzero] ** 2) / (2.0 * sigma**2))
-        / (sigma * r[nonzero])
+        * np.exp(-(r[regular] ** 2) / (2.0 * sigma**2))
+        / (sigma * r[regular])
     )
     factor = np.zeros_like(r, dtype=float)
-    factor[nonzero] = prefactor * bracket[nonzero] / r[nonzero]
+    factor[regular] = prefactor * bracket[regular] / r[regular]
+    factor[small] = (
+        prefactor
+        * math.sqrt(2.0 / math.pi)
+        / sigma**3
+        * (1.0 / 3.0 - small_u2 / 10.0 + small_u2 * small_u2 / 56.0)
+    )
     ex[nonzero] = factor[nonzero] * dx[nonzero]
     ey[nonzero] = factor[nonzero] * dy[nonzero]
     ez[nonzero] = factor[nonzero] * dz[nonzero]
@@ -141,7 +159,10 @@ def align_potential_gauge(phi_mpas, phi_exact, weights, mask):
     mask = np.asarray(mask, dtype=bool)
     if not np.any(mask):
         raise ValueError("comparison mask is empty")
-    offset = float(np.sum(weights[mask] * (phi_mpas[mask] - phi_exact[mask])) / np.sum(weights[mask]))
+    masked_weight_sum = float(np.sum(weights[mask]))
+    if not math.isfinite(masked_weight_sum) or masked_weight_sum == 0.0:
+        raise ValueError("masked weight sum must be finite and nonzero")
+    offset = float(np.sum(weights[mask] * (phi_mpas[mask] - phi_exact[mask])) / masked_weight_sum)
     return phi_mpas - offset, offset
 
 
@@ -152,11 +173,19 @@ def weighted_error_norms(actual, exact, weights, mask, *, relative_floor=0.0):
     mask = np.asarray(mask, dtype=bool)
     if not np.any(mask):
         raise ValueError("comparison mask is empty")
+    if relative_floor < 0.0:
+        raise ValueError("relative_floor must be nonnegative")
+    masked_weights = weights[mask]
+    if not np.all(np.isfinite(masked_weights)) or np.any(masked_weights < 0.0):
+        raise ValueError("masked weights must be finite and nonnegative")
+    masked_weight_sum = float(np.sum(masked_weights))
+    if masked_weight_sum == 0.0:
+        raise ValueError("masked weight sum must be nonzero")
     diff = actual[mask] - exact[mask]
-    numerator = float(np.sum(weights[mask] * diff * diff))
-    denominator = float(np.sum(weights[mask] * exact[mask] * exact[mask]))
+    numerator = float(np.sum(masked_weights * diff * diff))
+    denominator = float(np.sum(masked_weights * exact[mask] * exact[mask]))
     if relative_floor > 0.0:
-        denominator = max(denominator, float(np.sum(weights[mask])) * relative_floor**2)
+        denominator = max(denominator, masked_weight_sum * relative_floor**2)
     l2_absolute = math.sqrt(numerator)
     l2_relative = math.sqrt(numerator / denominator) if denominator > 0.0 else math.nan
     return {
