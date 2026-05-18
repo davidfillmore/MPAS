@@ -8,7 +8,10 @@ program test_mms_source
                                          electrostatic_fill_mms_sphere_source, &
                                          electrostatic_fill_mms_sphere_horizontal_source, &
                                          electrostatic_fill_dipole_source, &
-                                         electrostatic_fill_tripole_source
+                                         electrostatic_fill_tripole_source, &
+                                         electrostatic_fill_gaussian_monopole_source, &
+                                         electrostatic_fill_gaussian_dipole_y_source, &
+                                         electrostatic_fill_gaussian_dipole_z_source
 
    implicit none
 
@@ -18,6 +21,9 @@ program test_mms_source
    call test_sphere_horizontal_mms_source_uses_discrete_vertical_operator()
    call test_dipole_source_uses_explicit_center_with_expected_lobe_signs()
    call test_tripole_source_uses_explicit_center_with_expected_lobe_signs()
+   call test_gaussian_monopole_source_is_centered_and_positive()
+   call test_gaussian_dipole_sources_have_expected_signs()
+   call test_gaussian_charges_have_expected_integrals()
    call test_error_norms_are_relative_l2_and_absolute_linf()
    print *, "PASS: MMS source utility tests"
 
@@ -229,6 +235,110 @@ contains
       if (rho_charge(2,1) >= 0.0_RKIND) stop "FAIL: middle tripole lobe should be negative"
       if (rho_charge(3,1) <= 0.0_RKIND) stop "FAIL: upper tripole lobe should be positive"
    end subroutine test_tripole_source_uses_explicit_center_with_expected_lobe_signs
+
+   subroutine test_gaussian_monopole_source_is_centered_and_positive()
+      integer, parameter :: nCells = 3, nVertLevels = 3
+      real(kind=RKIND) :: xCell(nCells), yCell(nCells), zMid(nVertLevels,nCells)
+      real(kind=RKIND) :: rho_charge(nVertLevels,nCells)
+      real(kind=RKIND), parameter :: x0 = 42000.0_RKIND
+      real(kind=RKIND), parameter :: y0 = 42000.0_RKIND
+      real(kind=RKIND), parameter :: z0 = 7000.0_RKIND
+      integer :: iCell
+
+      xCell = [42000.0_RKIND, 50000.0_RKIND, 58000.0_RKIND]
+      yCell = [42000.0_RKIND, 42000.0_RKIND, 42000.0_RKIND]
+      do iCell = 1, nCells
+         zMid(:,iCell) = [5000.0_RKIND, 7000.0_RKIND, 9000.0_RKIND]
+      end do
+
+      call electrostatic_fill_gaussian_monopole_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                       x0, y0, z0, 20.0_RKIND, 2000.0_RKIND, &
+                                                       rho_charge)
+
+      if (rho_charge(2,1) <= 0.0_RKIND) stop "FAIL: Gaussian monopole center should be positive"
+      if (rho_charge(2,1) <= rho_charge(2,2)) stop "FAIL: Gaussian monopole does not honor explicit center"
+      if (any(rho_charge < 0.0_RKIND)) stop "FAIL: Gaussian monopole should not contain negative charge"
+   end subroutine test_gaussian_monopole_source_is_centered_and_positive
+
+   subroutine test_gaussian_dipole_sources_have_expected_signs()
+      integer, parameter :: nCells = 3, nVertLevels = 5
+      real(kind=RKIND) :: xCell(nCells), yCell(nCells), zMid(nVertLevels,nCells)
+      real(kind=RKIND) :: rho_y(nVertLevels,nCells), rho_z(nVertLevels,nCells)
+      real(kind=RKIND), parameter :: x0 = 42000.0_RKIND
+      real(kind=RKIND), parameter :: y0 = 42000.0_RKIND
+      real(kind=RKIND), parameter :: z0 = 8000.0_RKIND
+      integer :: iCell
+
+      xCell = [42000.0_RKIND, 42000.0_RKIND, 42000.0_RKIND]
+      yCell = [38000.0_RKIND, 42000.0_RKIND, 46000.0_RKIND]
+      do iCell = 1, nCells
+         zMid(:,iCell) = [4000.0_RKIND, 6000.0_RKIND, 8000.0_RKIND, 10000.0_RKIND, 12000.0_RKIND]
+      end do
+
+      call electrostatic_fill_gaussian_dipole_y_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                       x0, y0, z0, 20.0_RKIND, 1200.0_RKIND, &
+                                                       8000.0_RKIND, rho_y)
+      call electrostatic_fill_gaussian_dipole_z_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                       x0, y0, z0, 20.0_RKIND, 1200.0_RKIND, &
+                                                       4000.0_RKIND, rho_z)
+
+      if (rho_y(3,1) <= 0.0_RKIND) stop "FAIL: horizontal dipole positive lobe sign mismatch"
+      if (rho_y(3,3) >= 0.0_RKIND) stop "FAIL: horizontal dipole negative lobe sign mismatch"
+      if (rho_z(2,2) <= 0.0_RKIND) stop "FAIL: vertical dipole lower positive lobe sign mismatch"
+      if (rho_z(4,2) >= 0.0_RKIND) stop "FAIL: vertical dipole upper negative lobe sign mismatch"
+   end subroutine test_gaussian_dipole_sources_have_expected_signs
+
+   subroutine test_gaussian_charges_have_expected_integrals()
+      integer, parameter :: nSide = 25, nCells = nSide * nSide, nVertLevels = 25
+      real(kind=RKIND) :: xCell(nCells), yCell(nCells), zMid(nVertLevels,nCells)
+      real(kind=RKIND) :: rho_charge(nVertLevels,nCells)
+      real(kind=RKIND), parameter :: x0 = 0.0_RKIND
+      real(kind=RKIND), parameter :: y0 = 0.0_RKIND
+      real(kind=RKIND), parameter :: z0 = 0.0_RKIND
+      real(kind=RKIND), parameter :: charge = 20.0_RKIND
+      real(kind=RKIND), parameter :: sigma = 1000.0_RKIND
+      real(kind=RKIND), parameter :: separation = 7000.0_RKIND
+      real(kind=RKIND), parameter :: half_width = 10000.0_RKIND
+      real(kind=RKIND) :: dx, dy, dz, volume, integral
+      integer :: i, j, k, iCell
+
+      dx = 2.0_RKIND * half_width / real(nSide, kind=RKIND)
+      dy = dx
+      dz = 2.0_RKIND * half_width / real(nVertLevels, kind=RKIND)
+      volume = dx * dy * dz
+
+      do j = 1, nSide
+         do i = 1, nSide
+            iCell = (j - 1) * nSide + i
+            xCell(iCell) = x0 - half_width + (real(i, kind=RKIND) - 0.5_RKIND) * dx
+            yCell(iCell) = y0 - half_width + (real(j, kind=RKIND) - 0.5_RKIND) * dy
+         end do
+      end do
+
+      do iCell = 1, nCells
+         do k = 1, nVertLevels
+            zMid(k,iCell) = z0 - half_width + (real(k, kind=RKIND) - 0.5_RKIND) * dz
+         end do
+      end do
+
+      call electrostatic_fill_gaussian_monopole_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                       x0, y0, z0, charge, sigma, rho_charge)
+      integral = sum(rho_charge) * volume
+      if (abs(integral - charge) > 1.0e-2_RKIND * charge) &
+         stop "FAIL: Gaussian monopole integrated charge mismatch"
+
+      call electrostatic_fill_gaussian_dipole_y_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                       x0, y0, z0, charge, sigma, separation, rho_charge)
+      integral = sum(rho_charge) * volume
+      if (abs(integral) > 1.0e-10_RKIND * charge) &
+         stop "FAIL: horizontal Gaussian dipole should be net neutral"
+
+      call electrostatic_fill_gaussian_dipole_z_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                       x0, y0, z0, charge, sigma, separation, rho_charge)
+      integral = sum(rho_charge) * volume
+      if (abs(integral) > 1.0e-10_RKIND * charge) &
+         stop "FAIL: vertical Gaussian dipole should be net neutral"
+   end subroutine test_gaussian_charges_have_expected_integrals
 
    subroutine test_error_norms_are_relative_l2_and_absolute_linf()
       real(kind=RKIND) :: phi_exact(2,2), phi(2,2), volume(2,2)

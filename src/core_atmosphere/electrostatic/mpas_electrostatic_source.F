@@ -26,6 +26,9 @@ module mpas_electrostatic_source
    public :: electrostatic_fill_mms_sphere_horizontal_source
    public :: electrostatic_fill_dipole_source
    public :: electrostatic_fill_tripole_source
+   public :: electrostatic_fill_gaussian_monopole_source
+   public :: electrostatic_fill_gaussian_dipole_y_source
+   public :: electrostatic_fill_gaussian_dipole_z_source
 
 contains
 
@@ -316,6 +319,144 @@ contains
       end do
 
    end subroutine electrostatic_fill_tripole_source
+
+!***********************************************************************
+!
+!  routine electrostatic_fill_gaussian_monopole_source
+!
+!> \brief Fill an isotropic Gaussian monopole charge density
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_fill_gaussian_monopole_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                          x0, y0, z0, charge, sigma, rho_charge)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nCells), intent(in) :: xCell
+      real(kind=RKIND), dimension(nCells), intent(in) :: yCell
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMid
+      real(kind=RKIND), intent(in) :: x0
+      real(kind=RKIND), intent(in) :: y0
+      real(kind=RKIND), intent(in) :: z0
+      real(kind=RKIND), intent(in) :: charge
+      real(kind=RKIND), intent(in) :: sigma
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: rho_charge
+
+      rho_charge = 0.0_RKIND
+      call add_gaussian_charge_lobe(nCells, nVertLevels, xCell, yCell, zMid, x0, y0, z0, &
+                                    charge, sigma, rho_charge)
+
+   end subroutine electrostatic_fill_gaussian_monopole_source
+
+!***********************************************************************
+!
+!  routine electrostatic_fill_gaussian_dipole_y_source
+!
+!> \brief Fill a y-oriented neutral isotropic Gaussian dipole charge density
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_fill_gaussian_dipole_y_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                          x0, y0, z0, charge, sigma, separation, &
+                                                          rho_charge)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nCells), intent(in) :: xCell
+      real(kind=RKIND), dimension(nCells), intent(in) :: yCell
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMid
+      real(kind=RKIND), intent(in) :: x0
+      real(kind=RKIND), intent(in) :: y0
+      real(kind=RKIND), intent(in) :: z0
+      real(kind=RKIND), intent(in) :: charge
+      real(kind=RKIND), intent(in) :: sigma
+      real(kind=RKIND), intent(in) :: separation
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: rho_charge
+
+      rho_charge = 0.0_RKIND
+      call add_gaussian_charge_lobe(nCells, nVertLevels, xCell, yCell, zMid, &
+                                    x0, y0 - 0.5_RKIND * separation, z0, &
+                                    charge, sigma, rho_charge)
+      call add_gaussian_charge_lobe(nCells, nVertLevels, xCell, yCell, zMid, &
+                                    x0, y0 + 0.5_RKIND * separation, z0, &
+                                    -charge, sigma, rho_charge)
+
+   end subroutine electrostatic_fill_gaussian_dipole_y_source
+
+!***********************************************************************
+!
+!  routine electrostatic_fill_gaussian_dipole_z_source
+!
+!> \brief Fill a z-oriented neutral isotropic Gaussian dipole charge density
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_fill_gaussian_dipole_z_source(nCells, nVertLevels, xCell, yCell, zMid, &
+                                                          x0, y0, z0, charge, sigma, separation, &
+                                                          rho_charge)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nCells), intent(in) :: xCell
+      real(kind=RKIND), dimension(nCells), intent(in) :: yCell
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMid
+      real(kind=RKIND), intent(in) :: x0
+      real(kind=RKIND), intent(in) :: y0
+      real(kind=RKIND), intent(in) :: z0
+      real(kind=RKIND), intent(in) :: charge
+      real(kind=RKIND), intent(in) :: sigma
+      real(kind=RKIND), intent(in) :: separation
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: rho_charge
+
+      rho_charge = 0.0_RKIND
+      call add_gaussian_charge_lobe(nCells, nVertLevels, xCell, yCell, zMid, &
+                                    x0, y0, z0 - 0.5_RKIND * separation, &
+                                    charge, sigma, rho_charge)
+      call add_gaussian_charge_lobe(nCells, nVertLevels, xCell, yCell, zMid, &
+                                    x0, y0, z0 + 0.5_RKIND * separation, &
+                                    -charge, sigma, rho_charge)
+
+   end subroutine electrostatic_fill_gaussian_dipole_z_source
+
+!***********************************************************************
+!
+!  routine add_gaussian_charge_lobe
+!
+!> \brief Add one normalized isotropic Gaussian charge lobe
+!
+!-----------------------------------------------------------------------
+   subroutine add_gaussian_charge_lobe(nCells, nVertLevels, xCell, yCell, zMid, &
+                                       x0, y0, z0, charge, sigma, rho_charge)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nCells), intent(in) :: xCell
+      real(kind=RKIND), dimension(nCells), intent(in) :: yCell
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMid
+      real(kind=RKIND), intent(in) :: x0
+      real(kind=RKIND), intent(in) :: y0
+      real(kind=RKIND), intent(in) :: z0
+      real(kind=RKIND), intent(in) :: charge
+      real(kind=RKIND), intent(in) :: sigma
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(inout) :: rho_charge
+
+      integer :: iCell, k
+      real(kind=RKIND) :: amp, dx2, dy2, dz2, norm, pi, sigma_safe
+
+      pi = acos(-1.0_RKIND)
+      sigma_safe = max(sigma, 1.0_RKIND)
+      norm = (2.0_RKIND * pi)**1.5_RKIND * sigma_safe**3
+      amp = charge / norm
+
+      do iCell = 1, nCells
+         dx2 = (xCell(iCell) - x0)**2
+         dy2 = (yCell(iCell) - y0)**2
+         do k = 1, nVertLevels
+            dz2 = (zMid(k,iCell) - z0)**2
+            rho_charge(k,iCell) = rho_charge(k,iCell) + amp * &
+                                   exp(-(dx2 + dy2 + dz2) / (2.0_RKIND * sigma_safe**2))
+         end do
+      end do
+
+   end subroutine add_gaussian_charge_lobe
 
 !***********************************************************************
 !
