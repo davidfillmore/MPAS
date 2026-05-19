@@ -35,7 +35,7 @@ range $[-0.120, 0.475]$ nC m$^{-3}$. The final
 preconditioned conjugate-gradient (PCG) residuals remain below
 $10^{-10}$ throughout the sequence.
 
-| Time | Peak $|\boldsymbol{E}|$ | $\varphi$ range | $\rho_{\mathrm{stub}}$ range |
+| Time | Peak $\lvert\boldsymbol{E}\rvert$ | $\varphi$ range | $\rho_{\mathrm{stub}}$ range |
 |---:|---:|---:|---:|
 | 30 min | 39.6 kV m$^{-1}$ | 0.03 to 178.9 MV | -0.095 to 0.548 nC m$^{-3}$ |
 | 60 min | 41.7 kV m$^{-1}$ | -0.34 to 167.0 MV | -0.114 to 0.632 nC m$^{-3}$ |
