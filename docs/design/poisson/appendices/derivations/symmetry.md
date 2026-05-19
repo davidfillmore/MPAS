@@ -2,7 +2,7 @@
 # Symmetry and positive-definiteness of $\mathbb{L}$
 
 This appendix proves Property (P2) of the main text:
-$-\mathbb{L}$ is symmetric positive definite.
+$-\mathbb{L}$ is symmetric positive definite (SPD).
 
 ## Matrix entries
 
@@ -159,7 +159,8 @@ $-\mathsf{L}$ is symmetric positive definite.
 
 A standard result of Krylov iteration
 {cite:p}`golub2013matrix,saad2003iterative` is that conjugate
-gradients converge for any SPD operator. The PCG algorithm
-(see [](pcg.md)) applied with $A = -\mathsf{L}$ and
+gradients converge for any SPD operator. The preconditioned
+conjugate-gradient (PCG) algorithm (see [](pcg.md)) applied with
+$A = -\mathsf{L}$ and
 $\bm{c} = -\bb$ therefore converges to the unique solution
 $\bphi$ of $\mathsf{L} \bphi = \bb$.

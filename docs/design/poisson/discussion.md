@@ -2,8 +2,22 @@
 # Discussion and outlook
 
 The Poisson solver presented here provides a general-purpose
-elliptic capability on MPAS-A's unstructured Voronoi mesh. Four
-immediate follow-on applications are planned.
+elliptic capability on MPAS-A's unstructured Voronoi mesh. The
+immediate follow-on work falls into numerical-methods extensions
+and atmospheric applications.
+
+## Defect-aware spherical operator
+
+Tier A.2 identifies the twelve pentagonal cells and their
+neighboring graph rings as the dominant error source for the global
+spherical method of manufactured solutions (MMS). The Phase 1
+operator intentionally remains the conservative symmetric positive
+definite (SPD) two-point stencil used by preconditioned conjugate
+gradients (PCG). A Phase 2 correction should be defect-aware and
+should preserve the conservation and symmetry properties needed by
+the solver, likely through a mimetic multi-point or otherwise
+locally enriched spherical operator rather than scalar edge-factor
+retuning.
 
 ## Lightning parameterization
 
@@ -51,8 +65,9 @@ extension planned for Phase 2.
 
 For very high-resolution applications ($\gtrsim 10^{8}$
 unknowns), the iteration-count growth of diagonal-preconditioned
-CG motivates replacing the in-tree solver with a multigrid
-method. Algebraic multigrid via hypre {cite:p}`falgout2006hypre`
+conjugate gradient (CG) motivates replacing the in-tree solver with
+a multigrid method. Algebraic multigrid via hypre
+{cite:p}`falgout2006hypre`
 is a natural candidate; hypre's BoomerAMG is known to deliver
 near-optimal scaling on elliptic operators of this class.
 Integrating hypre preserves the operator developed here and

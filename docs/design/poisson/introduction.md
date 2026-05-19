@@ -36,15 +36,17 @@ is defined on MPAS-A's unstructured-horizontal, layered-vertical
 mesh by applying the TRiSK div-of-grad construction in the
 horizontal and a centered-difference stencil in the vertical.
 After multiplication by cell volume, the resulting operator is
-sparse, symmetric positive definite, and amenable to standard
-Krylov iteration. The linear system is solved by preconditioned
-conjugate gradients. A five-tier verification programme is
-specified to characterize convergence behaviour across
-configurations of increasing generality:
+sparse and symmetric positive definite (SPD), and is amenable to
+standard Krylov iteration. The linear system is solved by
+preconditioned conjugate gradients (PCG). Phase 1 evaluates the
+method through a five-tier framework, with the first, second, and
+fifth tiers reported here as completed results and the
+mesh-sensitivity and scaling tiers retained as follow-on
+measurements:
 
 1. **Tier A** ([](verification-plan/tier-a-mms.md)) — formal
-   order-of-accuracy verification via the method of manufactured
-   solutions in Cartesian and spherical geometries.
+   verification via the method of manufactured solutions (MMS) in
+   Cartesian and spherical geometries.
 2. **Tier B** ([](verification-plan/tier-b-idealized.md)) —
    qualitative tests on canonical storm-like charge distributions.
 3. **Tier C** ([](verification-plan/tier-c-mesh.md)) —
@@ -57,13 +59,18 @@ configurations of increasing generality:
    end-to-end illustration on a simulated supercell thunderstorm
    using a lightweight electrification stub.
 
-Tier C is the principal numerical contribution of the work. On
+The Phase 1 results reported here establish the in-tree operator
+and solver, verify second-order horizontal convergence on the
+Cartesian MMS sequence, characterize the spherical pentagon-defect
+limitation, and demonstrate physically interpretable diagnostic
+fields for idealized and dynamically evolving charge sources.
+Tier C remains the principal future numerical-methods study. On
 variable-resolution MPAS-A meshes — which are a principal
 motivation for the TRiSK framework — the convergence rate of the
 elliptic operator across refinement transitions is not known
 a priori; Tier C specifies the measurement programme that will
-characterize it directly by numerical experiment. Results will be
-reported in a follow-on publication.
+characterize it directly by numerical experiment. Tier D will
+measure parallel scaling and preconditioner performance.
 
 This narrative proceeds as follows.
 [](governing-equations.md) states the governing equations and
@@ -73,6 +80,6 @@ operator. [](solver.md) describes the solver.
 verification programme. [](discussion.md) discusses applications
 and [](conclusions.md) concludes. A summary table of stencil
 coefficients appears in
-[](appendices/stencil-summary.md); the extended step-by-step
-mathematical derivations will be added as further appendix pages
-in a subsequent revision.
+[](appendices/stencil-summary.md), and the extended derivation
+appendices expand the mathematical details of the operator,
+solver, and field reconstruction.

@@ -1,23 +1,14 @@
-# Minimal Sphinx Makefile for the Poisson design-narrative tree.
-# Build: `make html`     → _build/html/index.html
-#        `make clean`    → wipe _build
-#        `make linkcheck` → verify external links
+# Minimal makefile for the Poisson design-narrative Sphinx tree.
 
-SPHINXOPTS    ?= -W --keep-going
-SPHINXBUILD   ?= sphinx-build
+SPHINXOPTS    =
+SPHINXBUILD   = sphinx-build
 SOURCEDIR     = .
 BUILDDIR      = _build
 
-.PHONY: help html clean linkcheck
-
 help:
-	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)
+	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-html:
-	@$(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)
+.PHONY: help Makefile
 
-clean:
-	rm -rf "$(BUILDDIR)"
-
-linkcheck:
-	@$(SPHINXBUILD) -M linkcheck "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS)
+%: Makefile
+	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)

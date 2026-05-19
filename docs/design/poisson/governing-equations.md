@@ -80,10 +80,13 @@ function of position. In the end-to-end supercell configuration of
 Tier E ([](verification-plan/tier-e-showcase.md)), $\rho$ is
 produced by a lightweight electrification stub that parameterizes
 charge separation as proportional to vertical velocity and to
-ice-phase hydrometeor mass mixing ratios; this is an
-order-of-magnitude placeholder for future full electrification
-schemes of Saunders–Peck or Takahashi type
-{cite:p}`saunders1991effect,takahashi1978riming`.
+hydrometeor mass mixing ratios. When graupel and cloud ice are
+active, the positive and negative proxies are graupel and ice; in
+the Kessler supercell used here, the fallback proxies are rain and
+cloud water. This is an order-of-magnitude placeholder for future
+full electrification schemes of Saunders–Peck or Takahashi type
+{cite:p}`saunders1991effect,takahashi1978riming`, not a physical
+charging model.
 
 The coupling of the solver into the MPAS-A time loop is one-way in
 this work: $\varphi$ and $\boldsymbol{E}$ are diagnostic outputs

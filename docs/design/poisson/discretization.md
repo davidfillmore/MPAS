@@ -126,9 +126,11 @@ $$ (eq-linear-system)
 
 The assembled matrix $\mathbb{L}$ has two essential properties.
 
-**(P1) Sparsity.** Each row has at most $6 + 2 + 1 = 9$ non-zero
-entries (up to six hexagonal neighbours, two vertical neighbours,
-and the diagonal self-entry).
+**(P1) Sparsity.** Each row has at most `maxEdges + 2 + 1`
+non-zero entries: one horizontal neighbour contribution for each
+entry of `nEdgesOnCell(i)`, two vertical neighbours, and the
+diagonal self-entry. On the regular hexagonal meshes used in the
+Cartesian benchmark this reduces to $6 + 2 + 1 = 9$ entries.
 
 **(P2) Symmetry and positive definiteness.** $\mathbb{L}$ is
 symmetric in the standard $\ell^2$ inner product and, under the

@@ -23,8 +23,8 @@ $$
 $$ (eq-H-form1)
 
 $\mathbb{L}_{\mathrm{I}}$ is symmetric in standard $\ell^{2}$
-inner product (see [](symmetry.md)). CG uses standard inner
-products and norms:
+inner product (see [](symmetry.md)). Conjugate gradient (CG) uses
+standard inner products and norms:
 $\langle \vu, \vv \rangle = \sum_n u_n v_n$.
 
 **Form II: per-unit-volume.**
@@ -57,8 +57,8 @@ and similarly
 $\langle \vu, \mathbb{L}_{\mathrm{II}} \vv \rangle_V =
 \langle \mathbb{L}_{\mathrm{I}} \vv, \vu \rangle_{\ell^{2}} =
 \langle \mathbb{L}_{\mathrm{I}} \vu, \vv \rangle_{\ell^{2}}$
-(since $\mathbb{L}_{\mathrm{I}}$ is $\ell^{2}$-symmetric). CG in
-Form II uses $V$-weighted inner products and norms throughout.
+(since $\mathbb{L}_{\mathrm{I}}$ is $\ell^{2}$-symmetric). CG in Form
+II uses $V$-weighted inner products and norms throughout.
 
 **Equivalence.** Both forms solve the same continuous PDE to the
 same order. The two systems have identical solutions $\bphi$. The
@@ -103,5 +103,6 @@ Concretely, Form I fixes the stored operator weights as:
 
 The matvec for row $(i, k)$ assembles the sum of face-flux
 contributions directly from these weights and returns
-$A \, \varphi$ where $A \equiv -\mathbb{L}$ is the SPD negated
-Laplacian used inside the CG iteration.
+$A \, \varphi$ where $A \equiv -\mathbb{L}$ is the symmetric
+positive definite (SPD) negated Laplacian used inside the conjugate
+gradient (CG) iteration.
