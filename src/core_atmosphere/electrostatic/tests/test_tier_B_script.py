@@ -5,6 +5,7 @@ import importlib.util
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -87,6 +88,70 @@ class TierBIdealizedFigureTests(unittest.TestCase):
         self.assertEqual(metrics["peak_e"], 12.0)
         self.assertEqual(metrics["peak_z"], 4000.0)
         self.assertEqual(metrics["peak_x"], 1000.0)
+
+    def test_tripole_style_matches_charge_coupled_theme(self):
+        script = load_script()
+
+        self.assertEqual(
+            script.TRIPOLE_NEGATIVE_CHARGE_COLORS,
+            script.charge_style.NEGATIVE_CHARGE_CONTOUR_COLORS,
+        )
+        self.assertEqual(
+            script.TRIPOLE_POSITIVE_CHARGE_COLORS,
+            script.charge_style.POSITIVE_CHARGE_CONTOUR_COLORS,
+        )
+        self.assertEqual(script.TRIPOLE_CHARGE_LINESTYLE, "solid")
+        self.assertEqual(script.TRIPOLE_PHI_COLORBAR_LABEL, r"$\phi$ (MV)")
+        self.assertEqual(script.TRIPOLE_EMAG_COLORBAR_LABEL, r"$|E|$ (kV m$^{-1}$)")
+        self.assertTrue(np.allclose(script.tripole_phi_colormap()(0.5)[:3], (1.0, 1.0, 1.0)))
+        self.assertTrue(
+            np.allclose(script.tripole_positive_colormap()(0.0)[:3], (1.0, 1.0, 1.0))
+        )
+
+    def test_tripole_plot_quantities_use_paper_units(self):
+        script = load_script()
+        fields = {
+            "y": np.array([0.0, 2000.0, 4000.0]),
+            "zmid": np.array([[1000.0, 1000.0, 1000.0], [3000.0, 3000.0, 3000.0]]),
+            "phi": np.array([[1.0e6, -2.0e6, 3.0e6], [4.0e6, -5.0e6, 6.0e6]]),
+            "E_mag": np.array([[1000.0, 2000.0, 3000.0], [4000.0, 5000.0, 6000.0]]),
+            "rho": np.array([[1.0e-11, -2.0e-11, 3.0e-11], [4.0e-11, -5.0e-11, 6.0e-11]]),
+            "E_y": np.ones((2, 3)),
+            "E_z": -np.ones((2, 3)),
+        }
+
+        quantities = script.tripole_plot_quantities(fields, np.array([0, 2]))
+
+        self.assertTrue(np.allclose(quantities["y_km"], [[0.0, 4.0], [0.0, 4.0]]))
+        self.assertTrue(np.allclose(quantities["z_km"], [[1.0, 1.0], [3.0, 3.0]]))
+        self.assertTrue(np.allclose(quantities["phi_mv"], [[1.0, 3.0], [4.0, 6.0]]))
+        self.assertTrue(np.allclose(quantities["e_mag_kv_m"], [[1.0, 3.0], [4.0, 6.0]]))
+        self.assertTrue(np.allclose(quantities["rho_nc_m3"], [[0.01, 0.03], [0.04, 0.06]]))
+
+    def test_tripole_plot_uses_field_line_overlay(self):
+        script = load_script()
+        fields = {
+            "x": np.array([0.0, 1000.0, 2000.0]),
+            "y": np.array([0.0, 1000.0, 2000.0]),
+            "zmid": np.array([[1000.0, 1000.0, 1000.0], [3000.0, 3000.0, 3000.0]]),
+            "phi": np.array([[1.0e6, -2.0e6, 1.0e6], [2.0e6, -3.0e6, 2.0e6]]),
+            "E_mag": np.array([[1000.0, 2500.0, 1200.0], [1400.0, 2800.0, 1600.0]]),
+            "rho": np.array([[1.0e-11, -2.0e-11, 1.0e-11], [2.0e-11, -3.0e-11, 2.0e-11]]),
+            "E_y": np.ones((2, 3)),
+            "E_z": -np.ones((2, 3)),
+            "residual": 1.0e-10,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            output = pathlib.Path(tmp) / "tripole.pdf"
+            with mock.patch.object(script, "read_fields", return_value=fields), mock.patch.object(
+                script, "_section_indices", return_value=np.array([0, 1, 2])
+            ), mock.patch.object(script, "overlay_field_lines", return_value=True, create=True) as overlay:
+                script.plot_tripole(pathlib.Path("unused.nc"), output)
+
+            self.assertTrue(output.exists())
+            overlay.assert_called_once()
+            self.assertEqual(overlay.call_args.kwargs["nx"], 75)
+            self.assertEqual(overlay.call_args.kwargs["ny"], 55)
 
     def test_write_summary_json_serializes_numpy_values(self):
         script = load_script()

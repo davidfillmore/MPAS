@@ -165,6 +165,13 @@ class ChargeCoupledSupercellPlotTests(unittest.TestCase):
 
         self.assertTrue(np.allclose(cmap(0.0)[:3], (1.0, 1.0, 1.0)))
 
+    def test_phi_colormap_centers_zero_at_white(self):
+        script = load_script()
+
+        cmap = script.phi_colormap()
+
+        self.assertTrue(np.allclose(cmap(0.5)[:3], (1.0, 1.0, 1.0)))
+
     def test_positive_filled_levels_use_round_upper_bound_and_ticks(self):
         script = load_script()
 

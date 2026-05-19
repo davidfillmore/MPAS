@@ -23,6 +23,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.lines import Line2D  # noqa: E402
 
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
@@ -30,8 +31,9 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import free_space_charge_analytics as analytic  # noqa: E402
+import plot_charge_coupled_supercell as charge_style  # noqa: E402
 import run_tier_A1_cartesian_mms as tier_a1  # noqa: E402
-from run_tripole_supercell import centerline_indices  # noqa: E402
+from run_tripole_supercell import centerline_indices, overlay_field_lines  # noqa: E402
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -40,9 +42,16 @@ FIGURE_DIR = PAPER_DIR / "figures"
 
 KM_PER_M = 1.0e-3
 KVM_PER_VM = 1.0e-3
+MV_PER_V = 1.0e-6
+NC_PER_C = 1.0e9
 DEFAULT_POINT_CHARGE = 20.0
 DEFAULT_POINT_SIGMA = 2000.0
 DEFAULT_POINT_MAX_RADIUS = 25000.0
+TRIPOLE_PHI_COLORBAR_LABEL = r"$\phi$ (MV)"
+TRIPOLE_EMAG_COLORBAR_LABEL = r"$|E|$ (kV m$^{-1}$)"
+TRIPOLE_NEGATIVE_CHARGE_COLORS = charge_style.NEGATIVE_CHARGE_CONTOUR_COLORS
+TRIPOLE_POSITIVE_CHARGE_COLORS = charge_style.POSITIVE_CHARGE_CONTOUR_COLORS
+TRIPOLE_CHARGE_LINESTYLE = charge_style.CHARGE_CONTOUR_LINESTYLE
 
 
 def parse_args(argv=None):
@@ -337,6 +346,69 @@ def _section_indices(fields):
     return centerline_indices(np.asarray(fields["x"], dtype=float), np.asarray(fields["y"], dtype=float))
 
 
+def tripole_plot_quantities(fields, section):
+    """Return Tier B.2 vertical-section quantities in paper plotting units."""
+    y = np.broadcast_to(fields["y"][section], fields["zmid"][:, section].shape)
+    z = fields["zmid"][:, section]
+    return {
+        "y_km": y * KM_PER_M,
+        "z_km": z * KM_PER_M,
+        "phi_mv": fields["phi"][:, section] * MV_PER_V,
+        "e_mag_kv_m": fields["E_mag"][:, section] * KVM_PER_VM,
+        "rho_nc_m3": fields["rho"][:, section] * NC_PER_C,
+        "e_y": fields["E_y"][:, section],
+        "e_z": fields["E_z"][:, section],
+    }
+
+
+def tripole_phi_colormap():
+    """Return the shared signed potential colormap."""
+    return charge_style.phi_colormap()
+
+
+def tripole_positive_colormap():
+    """Return the shared positive-field colormap with white at zero."""
+    return charge_style.lwc_colormap()
+
+
+def _style_tripole_axis(ax):
+    ax.set_xlabel("y (km)")
+    ax.set_ylabel("z (km)")
+    ax.grid(True, linestyle=":", linewidth=0.35, alpha=0.55)
+
+
+def _add_charge_contour_legend(ax):
+    handles = [
+        Line2D(
+            [0],
+            [0],
+            color=TRIPOLE_NEGATIVE_CHARGE_COLORS[-1],
+            lw=0.9,
+            ls=TRIPOLE_CHARGE_LINESTYLE,
+            label=r"$\rho_q < 0$",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color=TRIPOLE_POSITIVE_CHARGE_COLORS[-1],
+            lw=0.9,
+            ls=TRIPOLE_CHARGE_LINESTYLE,
+            label=r"$\rho_q > 0$",
+        ),
+    ]
+    ax.legend(
+        handles=handles,
+        title=r"$\rho_q$ (nC m$^{-3}$)",
+        loc="upper right",
+        fontsize=8,
+        title_fontsize=8,
+        frameon=True,
+        framealpha=0.86,
+        borderpad=0.35,
+        handlelength=1.8,
+    )
+
+
 def _plot_section(ax, y, z, values, title, cmap, contour_values=None, contour_color="k"):
     mesh = ax.contourf(y * KM_PER_M, z * KM_PER_M, values, levels=31, cmap=cmap)
     if contour_values is not None:
@@ -365,58 +437,77 @@ def plot_tripole(output_nc, figure_path):
     fields = read_fields(output_nc)
     metrics = tripole_metrics(fields)
     section = _section_indices(fields)
-    y = np.broadcast_to(fields["y"][section], fields["zmid"][:, section].shape)
-    z = fields["zmid"][:, section]
-    phi = fields["phi"][:, section]
-    e_mag = fields["E_mag"][:, section] * KVM_PER_VM
-    rho = fields["rho"][:, section]
-    e_y = fields["E_y"][:, section]
-    e_z = fields["E_z"][:, section]
+    quantities = tripole_plot_quantities(fields, section)
+    y_km = quantities["y_km"]
+    z_km = quantities["z_km"]
+    phi_mv = quantities["phi_mv"]
+    e_mag_kv_m = quantities["e_mag_kv_m"]
+    rho_nc_m3 = quantities["rho_nc_m3"]
+    e_y = quantities["e_y"]
+    e_z = quantities["e_z"]
 
     figure_path = expanded(figure_path)
     figure_path.parent.mkdir(parents=True, exist_ok=True)
-    fig, axes = plt.subplots(1, 2, figsize=(8.2, 3.8), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(10.6, 4.35), sharey=True, constrained_layout=True)
 
-    phi_mesh = _plot_section(
+    phi_levels, phi_ticks, phi_norm = charge_style.signed_filled_levels(phi_mv)
+    charge_style.contourf_from_samples(
+        fig,
         axes[0],
-        y,
-        z,
-        phi,
-        r"potential $\varphi$",
-        "RdBu_r",
-        contour_values=rho,
+        y_km,
+        z_km,
+        phi_mv,
+        levels=phi_levels,
+        cmap=tripole_phi_colormap(),
+        norm=phi_norm,
+        colorbar_label=TRIPOLE_PHI_COLORBAR_LABEL,
+        ticks=phi_ticks,
     )
-    stride_y = max(1, y.shape[1] // 24)
-    stride_z = max(1, y.shape[0] // 12)
-    axes[0].quiver(
-        y[::stride_z, ::stride_y] * KM_PER_M,
-        z[::stride_z, ::stride_y] * KM_PER_M,
-        e_y[::stride_z, ::stride_y],
-        e_z[::stride_z, ::stride_y],
-        color="0.1",
-        alpha=0.55,
-        scale_units="xy",
-        angles="xy",
-        scale=None,
-        width=0.0025,
+    charge_style.overlay_signed_contours(axes[0], y_km, z_km, rho_nc_m3)
+    overlay_field_lines(
+        axes[0],
+        y_km.ravel(),
+        z_km.ravel(),
+        e_y.ravel(),
+        e_z.ravel(),
+        nx=75,
+        ny=55,
     )
-    fig.colorbar(phi_mesh, ax=axes[0], fraction=0.046, pad=0.04, label="V")
+    axes[0].set_title("Potential and Electric Field", pad=8)
+    _style_tripole_axis(axes[0])
+    _add_charge_contour_legend(axes[0])
 
-    emag_mesh = _plot_section(
+    emag_levels, emag_ticks = charge_style.positive_filled_levels(e_mag_kv_m)
+    charge_style.contourf_from_samples(
+        fig,
         axes[1],
-        y,
-        z,
-        e_mag,
-        r"$|E|$",
-        "magma",
-        contour_values=rho,
-        contour_color="w",
+        y_km,
+        z_km,
+        e_mag_kv_m,
+        levels=emag_levels,
+        cmap=tripole_positive_colormap(),
+        norm=None,
+        colorbar_label=TRIPOLE_EMAG_COLORBAR_LABEL,
+        ticks=emag_ticks,
     )
-    axes[1].plot(metrics["peak_y"] * KM_PER_M, metrics["peak_z"] * KM_PER_M, "co", markersize=4)
-    fig.colorbar(emag_mesh, ax=axes[1], fraction=0.046, pad=0.04, label=r"kV m$^{-1}$")
-    fig.suptitle("Tier B.2 synthetic thundercloud tripole", y=0.98)
-    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
-    fig.savefig(figure_path)
+    charge_style.overlay_signed_contours(axes[1], y_km, z_km, rho_nc_m3)
+    axes[1].plot(
+        metrics["peak_y"] * KM_PER_M,
+        metrics["peak_z"] * KM_PER_M,
+        "o",
+        color="#00a6d6",
+        markeredgecolor="white",
+        markeredgewidth=0.7,
+        markersize=4.5,
+    )
+    axes[1].set_title("Electric Field Magnitude", pad=8)
+    _style_tripole_axis(axes[1])
+
+    for ax in axes:
+        ax.set_xlim(float(np.nanmin(y_km)), float(np.nanmax(y_km)))
+        ax.set_ylim(float(np.nanmin(z_km)), float(np.nanmax(z_km)))
+
+    fig.savefig(figure_path, bbox_inches="tight")
     plt.close(fig)
 
     return {

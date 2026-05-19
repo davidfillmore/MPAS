@@ -390,6 +390,23 @@ def lwc_colormap():
     )
 
 
+def phi_colormap():
+    """Return a signed potential colormap with white fixed at zero."""
+    from matplotlib.colors import LinearSegmentedColormap
+
+    return LinearSegmentedColormap.from_list(
+        "phi_zero_white_rdbu",
+        (
+            (0.0, "#2166ac"),
+            (0.25, "#67a9cf"),
+            (0.5, "#ffffff"),
+            (0.75, "#ef8a62"),
+            (1.0, "#b2182b"),
+        ),
+        N=257,
+    )
+
+
 def signed_line_levels(values, negative_count=6, positive_count=4):
     """Return negative and positive contour levels for a signed field."""
     finite = np.asarray(values)[np.isfinite(values)]
@@ -657,7 +674,7 @@ def plot_charge_coupled_output(
         z_km,
         phi,
         levels=phi_levels,
-        cmap="RdBu_r",
+        cmap=phi_colormap(),
         norm=phi_norm,
         colorbar_label=PHI_COLORBAR_LABEL,
         ticks=phi_ticks,
