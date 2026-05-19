@@ -6,12 +6,15 @@
 The system {eq}`eq-linear-system` is solved using preconditioned
 conjugate gradient (PCG) iteration
 {cite:p}`hestenes1952methods,saad2003iterative,shewchuk1994introduction`.
-Since $-\mathbb{L}$ is SPD, the framework solves the equivalent
-system $(-\mathbb{L}) \, \boldsymbol{\varphi} = -\boldsymbol{b}$
-in standard form, running PCG with the convention that the
-operator applied inside the iteration is $-\mathbb{L}$ and the
-right-hand side is $-\boldsymbol{b}$. The pseudocode is written
-for the SPD operator $A \equiv -\mathbb{L}$ with right-hand side
+The acronym PCG means an iterative conjugate-gradient solver
+augmented by a preconditioner that approximates the inverse of the
+linear operator. Since $-\mathbb{L}$ is symmetric positive
+definite (SPD), the framework solves the equivalent system
+$(-\mathbb{L}) \, \boldsymbol{\varphi} = -\boldsymbol{b}$ in
+standard form, running PCG with the convention that the operator
+applied inside the iteration is $-\mathbb{L}$ and the right-hand
+side is $-\boldsymbol{b}$. The pseudocode is written for the SPD
+operator $A \equiv -\mathbb{L}$ with right-hand side
 $\boldsymbol{c} \equiv -\boldsymbol{b}$:
 
 ```text

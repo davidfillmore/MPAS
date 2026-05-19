@@ -5,6 +5,9 @@ Tier D reports the solver's parallel scaling behaviour under the
 two non-trivial preconditioners of [](../solver.md). Two
 complementary measurements are planned.
 
+Here PCG denotes the preconditioned conjugate-gradient solver used for
+the symmetric positive definite (SPD) Poisson system.
+
 ## Strong scaling
 
 A single global $30$ km quasi-uniform MPAS-A mesh ($\sim 65{,}000$
@@ -28,8 +31,8 @@ are the same as for the strong-scaling study.
 Both studies are repeated for the Jacobi and block symmetric
 Gauss–Seidel preconditioners. The quantity of primary interest is
 how the PCG iteration count grows with problem size at fixed
-preconditioner: unpreconditioned or diagonally-preconditioned CG
-on a 3D Poisson operator is expected to scale as
+preconditioner: unpreconditioned or diagonally-preconditioned
+conjugate gradient (CG) on a 3D Poisson operator is expected to scale as
 $\mathcal{O}(h^{-1})$ in iteration count, and the measured growth
 rate will motivate — or not — the Phase 2 replacement of the
 in-tree PCG by an algebraic multigrid method such as hypre's

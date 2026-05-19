@@ -1,13 +1,14 @@
 (app-pcg)=
-# PCG algorithm derivation and convergence
+# Preconditioned conjugate-gradient algorithm derivation and convergence
 
-This appendix derives the PCG algorithm from first principles and
-records the standard convergence bound.
+This appendix derives the preconditioned conjugate-gradient (PCG)
+algorithm from first principles and records the standard convergence
+bound.
 
 ## Problem setup
 
 Let $A \in \mathbb{R}^{N \times N}$ be symmetric positive
-definite and $\bc \in \mathbb{R}^{N}$. We seek
+definite (SPD) and $\bc \in \mathbb{R}^{N}$. We seek
 $\bphi \in \mathbb{R}^{N}$ solving
 
 $$
@@ -79,7 +80,8 @@ minimizes $\mathcal{J}$ over the Krylov subspace
 $\mathcal{K}_{k+1}(A, \bm{r}^{(0)}) =
 \mathrm{span}\{\bm{r}^{(0)}, A \bm{r}^{(0)}, \dots, A^{k} \bm{r}^{(0)}\}$,
 not only over the most recent direction. This is the key property
-that makes CG converge in at most $N$ steps in exact arithmetic.
+that makes conjugate gradient (CG) converge in at most $N$ steps in
+exact arithmetic.
 
 The next direction is built as a $\beta$-adjustment of the
 previous one:

@@ -25,7 +25,8 @@ the level of *structure* rather than *coefficients*:
 - Symmetry and positive-definiteness of the assembled operator
   follow from the factorization
   $\mathsf{d}^{\top}\mathsf{H}\,\mathsf{d}$ with $\mathsf{H}$
-  SPD, without any coefficient-level calculation.
+  symmetric positive definite (SPD), without any coefficient-level
+  calculation.
 - Discrete Stokes' theorem, $\mathsf{d}^{2} = 0$ at the chain
   level, and integration-by-parts all hold as *identities*, not
   approximations.
