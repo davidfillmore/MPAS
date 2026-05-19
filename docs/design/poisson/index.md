@@ -30,6 +30,13 @@ companion LaTeX manuscript targeting *Geoscientific Model
 Development* will cite the first tagged DOI as the citable
 formulation-of-record.
 
+The public site intentionally follows the paper closely for the
+mathematical formulation, Phase 1 results, figures, caveats, and
+conclusions. It also includes implementation-roadmap material that is
+useful for readers tracking active development but too operational for
+the journal manuscript: release provenance, Zenodo versioning, planned
+Tier C/D work, and Phase 2 extensions.
+
 ```{toctree}
 :maxdepth: 2
 :caption: Contents
@@ -39,6 +46,7 @@ governing-equations
 discretization
 solver
 verification-plan/index
+living-document
 discussion
 conclusions
 appendices/index

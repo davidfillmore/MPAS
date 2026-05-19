@@ -39,6 +39,16 @@ those distances are excluded from the fit. The preconditioned
 conjugate-gradient (PCG) residual for the solve was
 $9.93 \times 10^{-11}$.
 
+```{figure} ../figures/tier_B1_point_charge.png
+:alt: Tier B.1 regularized point-charge diagnostic.
+:width: 78%
+
+Tier B.1 regularized point-charge diagnostic on the idealized
+supercell mesh. Blue markers show MPAS median radial bins, while the
+solid and dashed curves show the analytic Gaussian field and Coulomb
+far-field reference, respectively.
+```
+
 ## Tier B.2 — Thundercloud tripole
 
 A three-Gaussian vertical stack represents the classical mature-storm
@@ -60,6 +70,17 @@ the source axis. The maximum field in the current configuration is
 2.86 kV m$^{-1}$ at $z = 8.75$ km, with PCG residual
 $9.83 \times 10^{-11}$. The potential has the expected negative well
 around the main negative layer and positive lobes above and below it.
+
+```{figure} ../figures/tier_B2_tripole.png
+:alt: Tier B.2 synthetic tripole diagnostic.
+:width: 100%
+
+Tier B.2 synthetic tripole diagnostic. The left panel shows the
+electrostatic potential with electric-field streamlines on the vertical
+source-axis section; the right panel shows $|\boldsymbol{E}|$ on the
+same section. Charge-density contours indicate the positive, negative,
+and positive Gaussian stack.
+```
 
 The tripole result should not be read as a storm-breakdown simulation:
 the field strength is well below the common $100$-$300$ kV m$^{-1}$
