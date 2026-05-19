@@ -25,10 +25,13 @@ large-scale parallel performance remain planned follow-on studies.
 This narrative is a living document. Major revisions are tagged on
 the underlying git repository at
 [`github.com/davidfillmore/MPAS`](https://github.com/davidfillmore/MPAS)
-and mint a Zenodo DOI via the GitHub↔Zenodo integration. The
-companion LaTeX manuscript targeting *Geoscientific Model
-Development* will cite the first tagged DOI as the citable
-formulation-of-record.
+and mint a Zenodo DOI via the GitHub↔Zenodo integration. The current
+RTD stable documentation snapshot is release `26.05.1`, archived at
+`10.5281/zenodo.20278575` under Zenodo concept DOI
+`10.5281/zenodo.19637632`. This snapshot contains the public Sphinx
+documentation and committed figure assets; the active solver source
+remains on the `feature/poisson` branch pending a later code-and-data
+release.
 
 The public site intentionally follows the paper closely for the
 mathematical formulation, Phase 1 results, figures, caveats, and

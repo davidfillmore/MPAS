@@ -34,7 +34,21 @@ Tagged releases of the public MPAS fork are archived through the
 GitHub-Zenodo integration. Each tagged release receives a citable DOI.
 Zenodo creates one concept record per GitHub repository, so the SHDOM
 and Poisson design releases are versioned snapshots under the shared
-MPAS-fork Zenodo concept. The initial Poisson design release is:
+MPAS-fork Zenodo concept. The current Poisson RTD stable snapshot is:
+
+- release tag: `26.05.1`;
+- version DOI: `10.5281/zenodo.20278575`;
+- concept DOI: `10.5281/zenodo.19637632`;
+- RTD stable URL:
+  [`mpas-poisson.readthedocs.io/en/stable/`](https://mpas-poisson.readthedocs.io/en/stable/);
+- scope: Sphinx documentation and committed figure assets for the
+  Phase 1 Poisson verification narrative.
+
+The active Poisson solver implementation remains on the
+`feature/poisson` branch and is not part of the `26.05.1`
+documentation tag. A code-and-data DOI should be minted when that
+implementation branch is released for the final paper. The initial
+Poisson design release remains:
 
 - v0.1 tag: `design-poisson-v0.1`;
 - v0.1 DOI: `10.5281/zenodo.19637636`;
