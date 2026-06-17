@@ -66,6 +66,7 @@ contains
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: E_vertical
 
       integer :: iCell, k
+      real(kind=RKIND) :: z0, z1, z2
 
       E_vertical = 0.0_RKIND
 
@@ -73,7 +74,17 @@ contains
          if (nVertLevels == 1) then
             E_vertical(1,iCell) = 0.0_RKIND
          else
-            E_vertical(1,iCell) = -(phi(2,iCell) - phi_ground) / zMid(2,iCell)
+            ! Second-order one-sided estimate at the ground-adjacent level,
+            ! using the Dirichlet ground face (flat-terrain Phase 1: z=0,
+            ! phi=phi_ground) and the two lowest cell midpoints. Exact for a
+            ! quadratic, and correctly placed at level 1.
+            z0 = 0.0_RKIND
+            z1 = zMid(1,iCell)
+            z2 = zMid(2,iCell)
+            E_vertical(1,iCell) = -( &
+               phi_ground   * (z1 - z2) / ((z0 - z1) * (z0 - z2)) + &
+               phi(1,iCell) * (2.0_RKIND * z1 - z0 - z2) / ((z1 - z0) * (z1 - z2)) + &
+               phi(2,iCell) * (z1 - z0) / ((z2 - z0) * (z2 - z1)) )
 
             do k = 2, nVertLevels - 1
                E_vertical(k,iCell) = -(phi(k+1,iCell) - phi(k-1,iCell)) / &
@@ -100,12 +111,22 @@ contains
       real(kind=RKIND), intent(in) :: sphere_radius
       logical, intent(in) :: on_a_sphere
 
+      ! Detect whether the horizontal mesh metrics are dimensional (metres,
+      ! the standard init_atmosphere output) or non-dimensional (radians, a
+      ! raw unit-sphere SCVT mesh). The separation is unambiguous: no physical
+      ! atmospheric mesh has cell spacing below ~1 m, and no unit-sphere
+      ! angular spacing exceeds pi rad, so a maximum |dcEdge| below this floor
+      ! marks a non-dimensional mesh whose metrics must be scaled to metres by
+      ! the configured sphere radius (arc length = R * angle).
+      real(kind=RKIND), parameter :: dimensional_metric_floor = 10.0_RKIND  ! metres
+
       electrostatic_horizontal_metric_scale = 1.0_RKIND
 
       if (.not. on_a_sphere) return
       if (nEdges <= 0) return
+      if (sphere_radius <= 1.0_RKIND) return
 
-      if (sphere_radius > 1000.0_RKIND .and. maxval(abs(dcEdge(1:nEdges))) < 1000.0_RKIND) then
+      if (maxval(abs(dcEdge(1:nEdges))) < dimensional_metric_floor) then
          electrostatic_horizontal_metric_scale = sphere_radius
       end if
 

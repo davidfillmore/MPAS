@@ -1,0 +1,5 @@
+# Compiled unit-test executables (build artifacts; `make clean` removes them)
+test_elliptic_operator
+test_pcg_solver
+test_mms_source
+test_e_reconstruction

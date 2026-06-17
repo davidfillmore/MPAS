@@ -9,7 +9,15 @@
 !
 !  mpas_pcg_solver
 !
-!> \brief Preconditioned conjugate-gradient solver kernels
+!> \brief Preconditioned conjugate-gradient solver kernels (serial reference)
+!> \details
+!>  Single-partition reference implementation: the dot products are local sums
+!>  with no MPI reduction and the matvec performs no halo exchange, so it is
+!>  valid only when the entire problem lives on one partition
+!>  (nCells == nCellsSolve), i.e. the unit tests. The MPI-parallel solve used
+!>  in production is solve_domain_potential in mpas_electrostatic_driver, which
+!>  halo-exchanges the iterate before each matvec and globally reduces every
+!>  inner product over owned cells only.
 !
 !-----------------------------------------------------------------------
 module mpas_pcg_solver
@@ -81,10 +89,11 @@ contains
 !
 !  routine pcg_solve
 !
-!> \brief Solve A phi = rhs with preconditioned conjugate gradients
+!> \brief Solve A phi = rhs with preconditioned conjugate gradients (serial)
 !> \details
-!>  status = 0 on convergence, 1 on max iteration, 2 on non-positive
-!>  curvature, and 3 on invalid preconditioner data.
+!>  Single-partition reference path (no halo exchange, no MPI reduction); see
+!>  the module header. status = 0 on convergence, 1 on max iteration, 2 on
+!>  non-positive curvature, and 3 on invalid preconditioner data.
 !
 !-----------------------------------------------------------------------
    subroutine pcg_solve(solver, op, rhs, phi, iter_count, r0, rfinal, status)

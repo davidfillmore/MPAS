@@ -7,31 +7,34 @@ program test_e_reconstruction
 
    implicit none
 
-   call test_vertical_e_uses_ground_centered_and_top_neumann()
+   call test_vertical_e_ground_second_order_and_top_neumann()
    call test_ground_rhs_only_modifies_bottom_level()
    call test_horizontal_metric_scale_respects_mesh_geometry()
    print *, "PASS: E reconstruction tests"
 
 contains
 
-   subroutine test_vertical_e_uses_ground_centered_and_top_neumann()
+   subroutine test_vertical_e_ground_second_order_and_top_neumann()
       integer, parameter :: nCells = 1, nVertLevels = 3
       real(kind=RKIND) :: phi(nVertLevels,nCells), zMid(nVertLevels,nCells)
       real(kind=RKIND) :: E_vertical(nVertLevels,nCells)
       real(kind=RKIND) :: expected(nVertLevels,nCells), phi_ground
 
-      phi(:,1) = [0.0_RKIND, 2.0_RKIND, 4.0_RKIND]
+      ! phi = z^2 sampled at the layer midpoints, consistent with phi=0 at the
+      ! ground face (z=0). The ground-adjacent estimate is a second-order
+      ! one-sided derivative, exact for a quadratic: d/dz(z^2) = 2z.
       zMid(:,1) = [0.5_RKIND, 1.5_RKIND, 2.5_RKIND]
+      phi(:,1) = zMid(:,1)**2
       phi_ground = 0.0_RKIND
 
       call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, zMid, phi_ground, E_vertical)
 
-      expected(1,1) = -(phi(2,1) - phi_ground) / (zMid(2,1) - 0.0_RKIND)
+      expected(1,1) = -2.0_RKIND * zMid(1,1)
       expected(2,1) = -(phi(3,1) - phi(1,1)) / (zMid(3,1) - zMid(1,1))
       expected(3,1) = 0.0_RKIND
 
-      if (maxval(abs(E_vertical - expected)) > 1.0e-14_RKIND) stop "FAIL: vertical E reconstruction mismatch"
-   end subroutine test_vertical_e_uses_ground_centered_and_top_neumann
+      if (maxval(abs(E_vertical - expected)) > 1.0e-12_RKIND) stop "FAIL: vertical E reconstruction mismatch"
+   end subroutine test_vertical_e_ground_second_order_and_top_neumann
 
    subroutine test_ground_rhs_only_modifies_bottom_level()
       integer, parameter :: nCells = 2, nVertLevels = 3

@@ -167,6 +167,21 @@ def interior_comparison_mask(x, y, z, *, bounds, centers, sigma, boundary_margin
 
 
 def align_potential_gauge(phi_mpas, phi_exact, weights, mask):
+    """Remove the additive gauge constant between MPAS and free-space potentials.
+
+    Returns ``phi_mpas`` shifted by the weighted-mean offset over ``mask`` so
+    that its masked mean matches ``phi_exact``.
+
+    Caveat: this removes only the *additive constant* gauge freedom. The MPAS
+    solve uses a grounded lower boundary and homogeneous Neumann top/lateral
+    boundaries, so its potential differs from the unbounded free-space analytic
+    field by a *harmonic boundary term* (an image-charge response), not merely
+    a constant. That term is largest near the domain edges. Comparisons must
+    therefore be restricted to the interior via the ``boundary_margin`` of
+    ``interior_comparison_mask``; otherwise domain-truncation error is
+    misattributed to the discrete operator. Gauge alignment is necessary but
+    not sufficient on its own.
+    """
     phi_mpas = _as_float_array(phi_mpas)
     phi_exact = _as_float_array(phi_exact)
     mask = np.asarray(mask, dtype=bool)

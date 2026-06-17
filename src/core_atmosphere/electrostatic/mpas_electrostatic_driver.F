@@ -968,12 +968,33 @@ contains
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: zMid
       real(kind=RKIND), dimension(nVertLevels), intent(out) :: dz
 
-      integer :: k
+      integer :: iCell, k
+      real(kind=RKIND) :: mean_dz, max_dev, thickness
+      real(kind=RKIND), parameter :: flat_rtol = 1.0e-3_RKIND
 
       call fill_z_mid(nCells, nVertLevels, zgrid, zMid)
 
       do k = 1, nVertLevels
-         dz(k) = sum(zgrid(k+1,1:nCells) - zgrid(k,1:nCells)) / real(nCells, kind=RKIND)
+         mean_dz = sum(zgrid(k+1,1:nCells) - zgrid(k,1:nCells)) / real(nCells, kind=RKIND)
+
+         ! Phase-1 electrostatics assumes flat (z-level) layers and uses a
+         ! single horizontally-averaged thickness per level. Refuse to run on
+         ! terrain-following meshes, where per-cell thickness varies and the
+         ! averaged operator would be silently inconsistent.
+         max_dev = 0.0_RKIND
+         do iCell = 1, nCells
+            thickness = zgrid(k+1,iCell) - zgrid(k,iCell)
+            max_dev = max(max_dev, abs(thickness - mean_dz))
+         end do
+         if (mean_dz > 0.0_RKIND .and. max_dev > flat_rtol * mean_dz) then
+            call mpas_log_write('Electrostatics requires a flat (z-level) mesh: layer ' // &
+                                'thickness varies horizontally, indicating a terrain-following ' // &
+                                'coordinate that is not supported in Phase 1. Disable ' // &
+                                'config_electrostatic_enable or use a flat mesh.', &
+                                messageType=MPAS_LOG_CRIT)
+         end if
+
+         dz(k) = mean_dz
          if (dz(k) <= 0.0_RKIND) then
             dz(k) = 1.0_RKIND
          end if
@@ -1047,7 +1068,13 @@ contains
       select case (trim(pc_name))
       case ('none')
          preconditioner_from_name = PC_NONE
+      case ('jacobi')
+         preconditioner_from_name = PC_JACOBI
       case default
+         call mpas_log_write('Electrostatics: unrecognized config_poisson_preconditioner ' // &
+                             '"'//trim(pc_name)//'"; falling back to Jacobi. Valid options are ' // &
+                             '"none" and "jacobi" (block-SGS is not implemented in Phase 1).', &
+                             messageType=MPAS_LOG_WARN)
          preconditioner_from_name = PC_JACOBI
       end select
 
