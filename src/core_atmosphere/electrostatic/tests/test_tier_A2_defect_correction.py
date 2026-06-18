@@ -227,13 +227,19 @@ class DefectCorrectionPrototypeTests(unittest.TestCase):
         (SCVT_MESH_ROOT / "60km" / "grid.nc").exists(),
         "60km SCVT mesh bundle not available",
     )
+    @unittest.expectedFailure  # NO-GO 2026-06-18; see notes/2026-06-18-poisson-defect-operator-no-go.md
     def test_enriched_restores_second_order_Y42(self):
+        """Phase-A gate: pure Whitney-Hodge enrichment does NOT restore second
+        order (achieved L2 ~0.002 vs the >=1.9 target). The un-lumped defect block
+        is inconsistent with the lumped bulk Hodge at the defect/bulk interface,
+        giving an O(1/h) ring-1 error. Defect-aware operator track shelved;
+        retained as an expected failure documenting the gate verdict."""
         script = load_script()
 
         slopes = script.convergence_Y42(
             meshes=["480km", "240km", "120km", "60km"], enrich=True, k_rings=1
         )
-        self.assertGreaterEqual(slopes["l2"], 1.9)  # baseline is ~1.38
+        self.assertGreaterEqual(slopes["l2"], 1.9)  # NO-GO: enriched L2 ~0.002
 
     def test_neighbor_cells_within_rings_expands_from_center_cell(self):
         script = load_script()
