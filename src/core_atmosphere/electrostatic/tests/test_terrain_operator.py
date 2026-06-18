@@ -75,5 +75,101 @@ class TerrainGridTests(unittest.TestCase):
         np.testing.assert_array_equal(g.zz, np.ones((nx, nz)))
 
 
+class TerrainOperatorTests(unittest.TestCase):
+    """Tests for Task A2: A = Gᵀ W G on the terrain grid.
+
+    Checks (a) symmetric + SPD on a non-trivial hill and (b) that the operator
+    reduces EXACTLY (< 1e-12) to the standard finite-volume 5-point Laplacian
+    when the slope is zero (hill_height = 0).
+    """
+
+    GROUND_CELL = 0
+
+    @staticmethod
+    def _flat_5point_reference(nx, nz, dx, dzeta, eps, ground_cell):
+        """Independent finite-volume 5-point Laplacian on the flat grid.
+
+        Periodic in x (every cell has two x-faces), no-flux (Neumann) at the
+        top and bottom in zeta (boundary cells have only one z-face), then
+        grounded by decoupling one cell (zero its row/column, keep diagonal).
+
+        Cell ordering matches the operator: c(i, k) = i*nz + k.
+        Face weights are eps * physical control volume = eps * dx * dzeta, so
+        the coefficients are cx = eps*dzeta/dx (x) and cz = eps*dx/dzeta (z).
+        """
+        n = nx * nz
+        A = np.zeros((n, n))
+        cx = eps * dzeta / dx
+        cz = eps * dx / dzeta
+
+        def c(i, k):
+            return i * nz + k
+
+        for i in range(nx):
+            im = (i - 1) % nx
+            ip = (i + 1) % nx
+            for k in range(nz):
+                cc = c(i, k)
+                # x: periodic, always two faces
+                A[cc, cc] += 2.0 * cx
+                A[cc, c(ip, k)] -= cx
+                A[cc, c(im, k)] -= cx
+                # z: Neumann (no flux) at top/bottom
+                if k > 0:
+                    A[cc, cc] += cz
+                    A[cc, c(i, k - 1)] -= cz
+                if k < nz - 1:
+                    A[cc, cc] += cz
+                    A[cc, c(i, k + 1)] -= cz
+
+        # Ground one cell: decouple it, keep its (positive) diagonal.
+        diag_g = A[ground_cell, ground_cell]
+        A[ground_cell, :] = 0.0
+        A[:, ground_cell] = 0.0
+        A[ground_cell, ground_cell] = diag_g
+        return A
+
+    def test_operator_symmetric_and_spd_on_hill(self):
+        """A is symmetric and strictly positive-definite on a 0.3*H hill."""
+        script = load_script()
+
+        nx, nz = 24, 16
+        hill_height, L, H = 0.3, 1.0, 1.0
+        eps = 1.0
+        g = script.terrain_grid(nx, nz, hill_height, L, H)
+
+        A = script.assemble_terrain_operator(g, eps, ground_cell=self.GROUND_CELL)
+
+        # Symmetry: no entry of |A - A.T| exceeds 1e-10.
+        self.assertEqual((abs(A - A.T) > 1e-10).nnz, 0)
+
+        # SPD: smallest eigenvalue strictly positive. Dense eigvalsh is exact
+        # and deterministic for this small grid (n = nx*nz = 384).
+        min_eig = np.linalg.eigvalsh(A.toarray()).min()
+        self.assertGreater(min_eig, 0.0)
+
+    def test_flat_grid_reduces_to_5point_laplacian(self):
+        """hill_height=0 => A equals the standard FV 5-point Laplacian (< 1e-12).
+
+        Uses dx != dzeta (nx=16, nz=12 on a unit square) so the x/z scaling is
+        exercised independently.
+        """
+        script = load_script()
+
+        nx, nz = 16, 12
+        L, H = 1.0, 1.0
+        eps = 1.0
+        g = script.terrain_grid(nx, nz, hill_height=0.0, L=L, H=H)
+
+        A = script.assemble_terrain_operator(g, eps, ground_cell=self.GROUND_CELL)
+
+        ref = self._flat_5point_reference(
+            nx, nz, g.dx, g.dzeta, eps, self.GROUND_CELL
+        )
+
+        max_err = np.max(np.abs(A.toarray() - ref))
+        self.assertLess(max_err, 1e-12)
+
+
 if __name__ == "__main__":
     unittest.main()
