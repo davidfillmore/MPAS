@@ -425,15 +425,24 @@ def _reconstruct_local_triangles(cell_xyz, vertices_xyz):
     return triangles
 
 
-def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz):
+def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz=None, triangles=None):
     """Return the un-lumped (Whitney 1-form) Hodge block for a local edge set.
 
-    ``cell_xyz`` holds the cell-center (primal vertex) coordinates, ``edge_list``
-    holds the primal edges as ``(cell_a, cell_b)`` index pairs, and
-    ``vertices_xyz`` holds the dual (Voronoi) corner coordinates (each is the
-    circumcenter of one local Delaunay triangle, used to recover the
-    triangulation). The block is the assembled lowest-order Whitney edge-mass
-    matrix ``M[e, e'] = sum_T integral_T w_e . w_e'`` over the local triangles,
+    ``cell_xyz`` holds the cell-center (primal vertex) coordinates and
+    ``edge_list`` holds the primal edges as ``(cell_a, cell_b)`` index pairs.
+    The local Delaunay triangulation can be supplied two ways:
+
+    - ``triangles`` (preferred): an explicit iterable of cell-index triples,
+      obtained from the mesh's ``cellsOnVertex`` adjacency. This is the robust
+      path on real (distorted) Voronoi meshes and is what
+      :func:`assemble_enriched_laplacian` uses.
+    - ``vertices_xyz``: the dual (Voronoi) corner coordinates, from which the
+      triangulation is recovered by the nearest-cell-centers heuristic in
+      :func:`_reconstruct_local_triangles`. Convenient for clean synthetic
+      fixtures, but the heuristic can mis-identify triangles on distorted cells.
+
+    The block is the assembled lowest-order Whitney edge-mass matrix
+    ``M[e, e'] = sum_T integral_T w_e . w_e'`` over the local triangles,
     restricted to the listed edges. It is symmetric and SPD by construction, and
     carries genuine off-diagonal coupling whenever listed edges share a triangle.
 
@@ -444,7 +453,6 @@ def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz):
     apply).
     """
     cell_xyz = np.asarray(cell_xyz, dtype=float)
-    vertices_xyz = np.asarray(vertices_xyz, dtype=float)
     edge_list = np.asarray(edge_list, dtype=int)
     n_edge = edge_list.shape[0]
 
@@ -452,7 +460,15 @@ def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz):
     for column, (cell_a, cell_b) in enumerate(edge_list):
         edge_index[(min(int(cell_a), int(cell_b)), max(int(cell_a), int(cell_b)))] = column
 
-    triangles = _reconstruct_local_triangles(cell_xyz, vertices_xyz)
+    if triangles is None:
+        triangles = _reconstruct_local_triangles(
+            cell_xyz, np.asarray(vertices_xyz, dtype=float)
+        )
+    else:
+        triangles = [
+            (tuple(int(cell) for cell in triple), index)
+            for index, triple in enumerate(triangles)
+        ]
     mass = np.zeros((n_edge, n_edge))
 
     for triple, _vertex_index in triangles:
@@ -472,6 +488,142 @@ def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz):
                 mass[local_columns[row], local_columns[column]] += local_mass[row, column]
 
     return 0.5 * (mass + mass.T)
+
+
+def assemble_enriched_laplacian(mesh, k_rings):
+    """Return the SPD enriched horizontal Laplacian ``A = d0^T H1 d0`` (grounded).
+
+    ``d0`` is the signed cell-difference incidence (edges x cells) built from the
+    mesh ``cellsOnEdge`` adjacency; ``d0 @ phi`` is the discrete edge gradient and
+    ``d0^T`` the divergence. ``H1`` is the edge Hodge star:
+
+    - **Bulk** edges (graph distance to the nearest non-hex cell greater than
+      ``k_rings``) keep the diagonal lumped Hodge ``l_e / d_e`` (``edge_weight``),
+      exactly the baseline two-point assembly.
+    - **Defect** edges (within ``k_rings``) take their Hodge entries from the
+      consistent Whitney 1-form edge-mass block (:func:`whitney_hodge_block`),
+      assembled over the local Delaunay triangles. The triangles are recovered
+      from the mesh's EXPLICIT ``cellsOnVertex`` topology - not a nearest-cell
+      heuristic - so distorted real Voronoi cells are handled correctly.
+
+    Overlapping pentagon neighborhoods are merged into one global Whitney block,
+    so no edge's Hodge is double-counted: every edge gets either the diagonal
+    entry or the Whitney entries, never both.
+
+    The ungrounded ``d0^T H1 d0`` is symmetric positive-semidefinite with the
+    constant potential as its only null vector. Grounding one cell (Dirichlet)
+    removes that null space, returning the symmetric positive-definite operator
+    as a SciPy CSR matrix of shape ``(nCells - 1, nCells - 1)``.
+    """
+    import scipy.sparse as sp
+
+    n_cells = int(mesh.n_edges_on_cell.size)
+    cells_on_edge = np.asarray(mesh.cells_on_edge, dtype=int)
+    cells_on_vertex = np.asarray(mesh.cells_on_vertex, dtype=int)
+    n_edges = cells_on_edge.shape[0]
+
+    distances = graph_distance_from_defects(
+        mesh.n_edges_on_cell, mesh.cells_on_cell, k_rings
+    )
+
+    # Map an unordered cell pair to its primal edge index.
+    pair_to_edge = {}
+    for edge in range(n_edges):
+        cell_a = int(cells_on_edge[edge, 0])
+        cell_b = int(cells_on_edge[edge, 1])
+        if cell_a < 0 or cell_b < 0:
+            continue
+        pair_to_edge[(min(cell_a, cell_b), max(cell_a, cell_b))] = edge
+
+    # Whitney triangles: dual vertices whose three cells all lie within k_rings
+    # of a defect. Built from explicit cellsOnVertex topology.
+    whitney_edges = set()
+    whitney_triangles = []
+    for vertex in range(cells_on_vertex.shape[0]):
+        triple = cells_on_vertex[vertex]
+        if np.any(triple < 0) or np.any(triple >= n_cells):
+            continue
+        cells = tuple(int(cell) for cell in triple)
+        if any(distances[cell] > k_rings for cell in cells):
+            continue
+        edges = [
+            pair_to_edge.get((min(cells[i], cells[j]), max(cells[i], cells[j])))
+            for i, j in ((0, 1), (1, 2), (0, 2))
+        ]
+        if any(edge is None for edge in edges):
+            continue
+        whitney_triangles.append(cells)
+        whitney_edges.update(edges)
+
+    rows = []
+    cols = []
+    data = []
+
+    if whitney_triangles:
+        # Assemble one merged Whitney block over a local cell numbering, then
+        # scatter back into global edge indices.
+        local_cells = sorted({cell for triple in whitney_triangles for cell in triple})
+        global_to_local = {cell: index for index, cell in enumerate(local_cells)}
+        cell_xyz_local = mesh.xyz_cell[local_cells]
+
+        whitney_edges_sorted = sorted(whitney_edges)
+        edge_list_local = [
+            (
+                global_to_local[int(cells_on_edge[edge, 0])],
+                global_to_local[int(cells_on_edge[edge, 1])],
+            )
+            for edge in whitney_edges_sorted
+        ]
+        triangles_local = [
+            tuple(global_to_local[cell] for cell in triple)
+            for triple in whitney_triangles
+        ]
+        hodge_block = whitney_hodge_block(
+            cell_xyz_local, edge_list_local, triangles=triangles_local
+        )
+        for i, edge_i in enumerate(whitney_edges_sorted):
+            for j, edge_j in enumerate(whitney_edges_sorted):
+                value = hodge_block[i, j]
+                if value != 0.0:
+                    rows.append(edge_i)
+                    cols.append(edge_j)
+                    data.append(value)
+
+    # Diagonal lumped Hodge for every bulk (non-Whitney) edge.
+    edge_weight = np.asarray(mesh.edge_weight, dtype=float)
+    for edge in range(n_edges):
+        if edge in whitney_edges:
+            continue
+        rows.append(edge)
+        cols.append(edge)
+        data.append(edge_weight[edge])
+
+    hodge = sp.csr_matrix((data, (rows, cols)), shape=(n_edges, n_edges))
+
+    # Signed cell-difference incidence d0 (edges x cells).
+    d_rows = []
+    d_cols = []
+    d_data = []
+    for edge in range(n_edges):
+        cell_a = int(cells_on_edge[edge, 0])
+        cell_b = int(cells_on_edge[edge, 1])
+        if cell_a < 0 or cell_b < 0:
+            continue
+        d_rows.extend((edge, edge))
+        d_cols.extend((cell_a, cell_b))
+        d_data.extend((-1.0, 1.0))
+    incidence = sp.csr_matrix(
+        (d_data, (d_rows, d_cols)), shape=(n_edges, n_cells)
+    )
+
+    operator = (incidence.T @ hodge @ incidence).tocsr()
+    operator = 0.5 * (operator + operator.T)
+
+    # Ground one cell (Dirichlet) to remove the constant null space.
+    keep = np.arange(1, n_cells)
+    grounded = operator[keep][:, keep].tocsr()
+    grounded.eliminate_zeros()
+    return grounded
 
 
 def regular_hex_patch():
@@ -580,6 +732,11 @@ def load_mesh(bundle_dir):
             n_cells = n_edges_on_cell.size
             cells_on_cell = cell_major(read_var(grid, "cellsOnCell").astype(int), n_cells) - 1
             edges_on_cell = cell_major(read_var(grid, "edgesOnCell").astype(int), n_cells) - 1
+            # Explicit mesh topology used to reconstruct local Delaunay triangles
+            # and the signed cell-difference incidence (do not infer triangles
+            # from a nearest-cell-centers heuristic on distorted Voronoi cells).
+            cells_on_vertex = read_var(grid, "cellsOnVertex").astype(int) - 1
+            cells_on_edge = read_var(grid, "cellsOnEdge").astype(int) - 1
 
         metric_scale = (
             sphere_radius if sphere_radius > 1000.0 and np.max(np.abs(dc_edge)) < 1000.0 else 1.0
@@ -597,6 +754,8 @@ def load_mesh(bundle_dir):
             n_edges_on_cell=n_edges_on_cell,
             cells_on_cell=cells_on_cell,
             edges_on_cell=edges_on_cell,
+            cells_on_vertex=cells_on_vertex,
+            cells_on_edge=cells_on_edge,
             sphere_radius=sphere_radius,
             metric_scale=metric_scale,
             n_edges=edge_weight.size,

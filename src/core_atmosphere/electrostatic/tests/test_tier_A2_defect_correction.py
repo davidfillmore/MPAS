@@ -6,6 +6,12 @@ import pathlib
 import unittest
 
 import numpy as np
+import scipy.sparse.linalg as spla
+
+
+SCVT_MESH_ROOT = pathlib.Path(
+    "~/Data/MPAS/poisson_tier_A2_scvt/meshes"
+).expanduser()
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -191,6 +197,23 @@ class DefectCorrectionPrototypeTests(unittest.TestCase):
 
         expected_diagonal = (5.0 / 6.0) * (geom.edge_len / geom.edge_dc)
         self.assertTrue(np.allclose(np.diag(H), expected_diagonal, rtol=1e-9))
+
+    @unittest.skipUnless(
+        (SCVT_MESH_ROOT / "480km" / "grid.nc").exists(),
+        "480km SCVT mesh bundle not available",
+    )
+    def test_enriched_operator_is_spd_on_scvt(self):
+        script = load_script()
+
+        mesh = script.load_mesh(SCVT_MESH_ROOT / "480km")
+        A = script.assemble_enriched_laplacian(mesh, k_rings=1)
+
+        # Symmetric to machine precision.
+        self.assertEqual((abs(A - A.T) > 1e-9).nnz, 0)
+
+        # Positive-definite: smallest algebraic eigenvalue strictly positive.
+        lam_min = spla.eigsh(A, k=1, which="SA", return_eigenvectors=False)[0]
+        self.assertGreater(lam_min, 0.0)
 
     def test_neighbor_cells_within_rings_expands_from_center_cell(self):
         script = load_script()
