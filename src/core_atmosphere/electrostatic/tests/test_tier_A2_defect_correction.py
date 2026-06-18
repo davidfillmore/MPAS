@@ -198,6 +198,14 @@ class DefectCorrectionPrototypeTests(unittest.TestCase):
         expected_diagonal = (5.0 / 6.0) * (geom.edge_len / geom.edge_dc)
         self.assertTrue(np.allclose(np.diag(H), expected_diagonal, rtol=1e-9))
 
+    def test_whitney_hodge_block_requires_geometry(self):
+        script = load_script()
+
+        with self.assertRaises(ValueError):
+            script.whitney_hodge_block(
+                np.zeros((3, 3)), np.array([[0, 1]], dtype=int)
+            )
+
     @unittest.skipUnless(
         (SCVT_MESH_ROOT / "480km" / "grid.nc").exists(),
         "480km SCVT mesh bundle not available",

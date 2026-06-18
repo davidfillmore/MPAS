@@ -452,6 +452,11 @@ def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz=None, triangles=None):
     explicit lumping/calibration step, which this block deliberately does not
     apply).
     """
+    if triangles is None and vertices_xyz is None:
+        raise ValueError(
+            "whitney_hodge_block requires either vertices_xyz or triangles"
+        )
+
     cell_xyz = np.asarray(cell_xyz, dtype=float)
     edge_list = np.asarray(edge_list, dtype=int)
     n_edge = edge_list.shape[0]
