@@ -616,6 +616,178 @@ def assemble_enriched_laplacian_ungrounded(mesh, k_rings):
     return operator
 
 
+import importlib.util as _ilu
+
+_MFD_PATH = pathlib.Path(__file__).resolve().parent / "mfd_operator.py"
+
+
+def _mfd_mod():
+    """Load the sibling ``mfd_operator`` module (cotangent Hodge primitive)."""
+    spec = _ilu.spec_from_file_location("mfd_operator", _MFD_PATH)
+    module = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _pair_to_edge_map(cells_on_edge):
+    """Map an unordered cell pair ``(min, max)`` to its primal edge index."""
+    pair_to_edge = {}
+    for edge in range(cells_on_edge.shape[0]):
+        cell_a = int(cells_on_edge[edge, 0])
+        cell_b = int(cells_on_edge[edge, 1])
+        if cell_a < 0 or cell_b < 0:
+            continue
+        pair_to_edge[(min(cell_a, cell_b), max(cell_a, cell_b))] = edge
+    return pair_to_edge
+
+
+def cotangent_edge_weight(mesh):
+    """Return the per-edge diagonal cotangent Hodge weight ``*1`` over the sphere.
+
+    This is the consistent scalar edge-Hodge that pairs with the plain signed
+    cell-difference incidence ``d0`` to give the P1 nodal stiffness on the
+    Delaunay triangulation (the cotangent Laplacian). Each dual vertex
+    (``cellsOnVertex``) is a Delaunay triangle of three cell centres; for each of
+    its three primal edges we add ``1/2 cot(theta)`` where ``theta`` is the
+    triangle's interior angle OPPOSITE that edge, computed from the planar
+    (chordal) triangle geometry via :func:`mfd_operator.cotangent_hodge_weights`
+    (the same triangle-plane embedding the Whitney edge-mass uses). The two
+    Delaunay triangles sharing an edge accumulate into one weight.
+
+    For a well-centred (Delaunay-dual) edge the cotangent identity gives
+    ``1/2(cot a + cot b) = l_e / d_e``, so in the hexagonal BULK this equals the
+    baseline ``mesh.edge_weight`` (``dvEdge/dcEdge``); at the irregular pentagons
+    (where the circumcentric ``l_e/d_e`` is not the true cotangent) it supplies
+    the consistent correction. The metric scaling matches ``edge_weight``: the
+    cotangent is scale-invariant (a ratio of lengths), so the chordal unit-sphere
+    triangle and the physical-radius triangle give the same weight.
+    """
+    mfd = _mfd_mod()
+    n_cells = int(mesh.n_edges_on_cell.size)
+    cells_on_edge = np.asarray(mesh.cells_on_edge, dtype=int)
+    cells_on_vertex = np.asarray(mesh.cells_on_vertex, dtype=int)
+    n_edges = cells_on_edge.shape[0]
+
+    pair_to_edge = _pair_to_edge_map(cells_on_edge)
+
+    weight = np.zeros(n_edges, dtype=float)
+    local_index = ((0, 1), (1, 2), (0, 2))
+    for vertex in range(cells_on_vertex.shape[0]):
+        triple = cells_on_vertex[vertex]
+        if np.any(triple < 0) or np.any(triple >= n_cells):
+            continue
+        cells = tuple(int(cell) for cell in triple)
+        edges = [
+            pair_to_edge.get((min(cells[i], cells[j]), max(cells[i], cells[j])))
+            for i, j in local_index
+        ]
+        if any(edge is None for edge in edges):
+            continue
+        triangle_xyz = mesh.xyz_cell[list(cells)]
+        weights, _local_pairs = mfd.cotangent_hodge_weights(triangle_xyz)
+        for slot, edge in enumerate(edges):
+            weight[edge] += float(weights[slot])
+    return weight
+
+
+def bulk_edge_mask(mesh):
+    """Return a boolean mask of hexagonal-bulk edges (away from any pentagon).
+
+    A bulk edge is well-centred: both incident cells are hexagons and every cell
+    of every Delaunay triangle that touches the edge is a hexagon. These are the
+    edges where the cotangent identity ``1/2(cot a + cot b) = l_e / d_e`` makes
+    the cotangent weight equal the baseline lumped Hodge ``dvEdge/dcEdge``.
+    """
+    n_cells = int(mesh.n_edges_on_cell.size)
+    n_edges_on_cell = np.asarray(mesh.n_edges_on_cell, dtype=int)
+    cells_on_edge = np.asarray(mesh.cells_on_edge, dtype=int)
+    cells_on_vertex = np.asarray(mesh.cells_on_vertex, dtype=int)
+    n_edges = cells_on_edge.shape[0]
+
+    pair_to_edge = _pair_to_edge_map(cells_on_edge)
+    is_hex = n_edges_on_cell == 6
+
+    # Both incident cells must be hexagons.
+    mask = np.zeros(n_edges, dtype=bool)
+    for edge in range(n_edges):
+        cell_a = int(cells_on_edge[edge, 0])
+        cell_b = int(cells_on_edge[edge, 1])
+        if cell_a < 0 or cell_b < 0:
+            continue
+        mask[edge] = is_hex[cell_a] and is_hex[cell_b]
+
+    # Demote any edge belonging to a Delaunay triangle that touches a non-hex
+    # cell: such an edge's two-triangle cotangent stencil is contaminated.
+    local_index = ((0, 1), (1, 2), (0, 2))
+    for vertex in range(cells_on_vertex.shape[0]):
+        triple = cells_on_vertex[vertex]
+        if np.any(triple < 0) or np.any(triple >= n_cells):
+            continue
+        cells = tuple(int(cell) for cell in triple)
+        if all(is_hex[cell] for cell in cells):
+            continue
+        for i, j in local_index:
+            edge = pair_to_edge.get((min(cells[i], cells[j]), max(cells[i], cells[j])))
+            if edge is not None:
+                mask[edge] = False
+    return mask
+
+
+def _signed_cell_difference_incidence(cells_on_edge, n_cells):
+    """Return the signed cell-difference incidence ``d0`` (edges x cells), +/-1."""
+    import scipy.sparse as sp
+
+    n_edges = cells_on_edge.shape[0]
+    rows, cols, data = [], [], []
+    for edge in range(n_edges):
+        cell_a = int(cells_on_edge[edge, 0])
+        cell_b = int(cells_on_edge[edge, 1])
+        if cell_a < 0 or cell_b < 0:
+            continue
+        rows.extend((edge, edge))
+        cols.extend((cell_a, cell_b))
+        data.extend((-1.0, 1.0))
+    return sp.csr_matrix((data, (rows, cols)), shape=(n_edges, n_cells))
+
+
+def assemble_cotangent_laplacian_ungrounded(mesh):
+    """Return the symmetric PSD cotangent horizontal operator ``A = d0^T *1 d0``.
+
+    This is the globally consistent (interface-free) sphere operator: the
+    DIAGONAL cotangent Hodge ``*1`` (:func:`cotangent_edge_weight`) applied to
+    EVERY edge, paired with the EXISTING signed cell-difference incidence ``d0``
+    (the same one :func:`assemble_enriched_laplacian_ungrounded` builds). It is
+    the P1 nodal-element (finite-element) stiffness matrix on the Delaunay
+    triangulation of the cell centres: cell-centred, symmetric positive-
+    semidefinite with the constant potential as its only null vector, and
+    second-order consistent.
+
+    Unlike the shelved local Whitney enrichment, there is NO defect/bulk
+    interface: the cotangent weight is the single Hodge everywhere. In the
+    hexagonal bulk it reduces EXACTLY to the baseline lumped Hodge
+    ``edge_weight = dvEdge/dcEdge`` (the cotangent identity
+    ``1/2(cot a + cot b) = l_e/d_e`` for a well-centred edge), so Tier A.1 / the
+    bulk is unchanged; at the pentagons it supplies the consistent correction the
+    circumcentric two-point operator lacks.
+
+    Like :func:`assemble_enriched_laplacian_ungrounded`, ``A`` approximates
+    ``-area * laplacian`` cell-by-cell, so ``-(A @ phi) / area`` recovers the
+    discrete finite-volume Laplacian on the same footing as the baseline.
+    """
+    import scipy.sparse as sp
+
+    n_cells = int(mesh.n_edges_on_cell.size)
+    cells_on_edge = np.asarray(mesh.cells_on_edge, dtype=int)
+
+    cot_weight = cotangent_edge_weight(mesh)
+    hodge = sp.diags(cot_weight)
+    incidence = _signed_cell_difference_incidence(cells_on_edge, n_cells)
+
+    operator = (incidence.T @ hodge @ incidence).tocsr()
+    operator = 0.5 * (operator + operator.T)
+    return operator
+
+
 def assemble_enriched_laplacian(mesh, k_rings):
     """Return the SPD enriched horizontal Laplacian ``A = d0^T H1 d0`` (grounded).
 
@@ -874,23 +1046,25 @@ def convergence_slope(rows, key):
 DEFAULT_SCVT_RUN_ROOT = pathlib.Path("~/Data/MPAS/poisson_tier_A2_scvt")
 
 
-def operator_residual_Y42(mesh, enrich, k_rings):
+def operator_residual_Y42(mesh, enrich, k_rings, variant=None):
     """Return the global L2/Linf operator-only residual for the Y_4^2 target.
 
     Reuses the baseline operator-only diagnostic methodology exactly: apply the
     discrete operator to the normalized analytic Y_4^2 field, then compare the
     resulting discrete Laplacian against the continuous ``laplacian Y_4^2 =
     -l(l+1)/R^2 Y_4^2 = -20/R^2 Y_4^2``. The ONLY thing that changes between
-    baseline and enriched is the operator:
+    operators is the discrete Laplacian:
 
-    - ``enrich=False`` -> the baseline diagonal-Hodge two-point assembly
+    - ``variant="cotangent"`` -> the globally consistent diagonal cotangent
+      Hodge ``A = d0^T *1 d0`` (:func:`assemble_cotangent_laplacian_ungrounded`,
+      the P1 nodal stiffness). Like the enriched operator, ``A`` approximates
+      ``-area * laplacian``, so the discrete Laplacian is ``-(A @ phi) / area``.
+    - ``enrich=True``  -> the (shelved) local Whitney-enriched
+      ``A = d0^T H1 d0`` (:func:`assemble_enriched_laplacian_ungrounded`),
+      likewise ``-(A @ phi) / area``.
+    - otherwise -> the baseline diagonal-Hodge two-point assembly
       (:func:`apply_edge_factors_to_laplacian`), identical to the existing
       baseline in :func:`evaluate_mesh`.
-    - ``enrich=True``  -> the enriched ``A = d0^T H1 d0`` operator
-      (:func:`assemble_enriched_laplacian_ungrounded`). Since ``A`` approximates
-      ``-area * laplacian``, the discrete Laplacian is ``-(A @ phi) / area`` -
-      bringing the enriched operator onto the exact same finite-volume footing
-      as the baseline (the two coincide on bulk edges).
 
     The residual is the area-weighted global metric over all cells (no exclusion
     mask), matching the baseline ``"global"`` row.
@@ -899,7 +1073,13 @@ def operator_residual_Y42(mesh, enrich, k_rings):
     sample = sample / np.max(np.abs(sample))
     target_laplacian = -20.0 / mesh.sphere_radius**2 * sample
 
-    if enrich:
+    if variant is not None:
+        if variant == "cotangent":
+            operator = assemble_cotangent_laplacian_ungrounded(mesh)
+        else:
+            raise ValueError(f"unknown variant {variant!r}")
+        discrete_laplacian = -(operator @ sample) / mesh.area
+    elif enrich:
         operator = assemble_enriched_laplacian_ungrounded(mesh, k_rings)
         discrete_laplacian = -(operator @ sample) / mesh.area
     else:
@@ -916,13 +1096,17 @@ def operator_residual_Y42(mesh, enrich, k_rings):
     return residual_metrics(discrete_laplacian, target_laplacian, mesh.area, mask)
 
 
-def convergence_Y42(meshes, enrich=False, k_rings=1, run_root=None):
+def convergence_Y42(meshes, enrich=False, k_rings=1, run_root=None, variant=None):
     """Return finest-two-mesh log-log L2/Linf operator-convergence slopes for Y_4^2.
 
     For each mesh in ``meshes`` (coarse-to-fine labels such as ``"480km"``),
     loads the SCVT bundle from ``run_root/meshes/<label>``, measures the global
     operator-only residual via :func:`operator_residual_Y42`, then fits the
     finest-pair log-log slope (same fit as the baseline ``convergence_slope``).
+
+    ``variant`` selects the operator (``"cotangent"`` for the globally consistent
+    diagonal cotangent Hodge); when ``None`` the ``enrich`` flag chooses between
+    the baseline and the shelved local Whitney enrichment.
 
     Returns ``{"l2": slope, "linf": slope, "rows": [...]}``. ``run_root``
     defaults to the Tier A.2 SCVT root so the gate test can call this with only
@@ -935,7 +1119,7 @@ def convergence_Y42(meshes, enrich=False, k_rings=1, run_root=None):
     rows = []
     for mesh_name in meshes:
         mesh = load_mesh(run_root / "meshes" / mesh_name)
-        l2, linf = operator_residual_Y42(mesh, enrich, k_rings)
+        l2, linf = operator_residual_Y42(mesh, enrich, k_rings, variant=variant)
         rows.append(
             {
                 "mesh": mesh_name,

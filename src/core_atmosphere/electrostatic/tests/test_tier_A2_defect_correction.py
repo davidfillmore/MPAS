@@ -241,6 +241,76 @@ class DefectCorrectionPrototypeTests(unittest.TestCase):
         )
         self.assertGreaterEqual(slopes["l2"], 1.9)  # NO-GO: enriched L2 ~0.002
 
+    @unittest.skipUnless(
+        (SCVT_MESH_ROOT / "480km" / "grid.nc").exists(),
+        "480km SCVT mesh bundle not available",
+    )
+    def test_cotangent_operator_is_spd_on_scvt(self):
+        """The global cotangent (P1 nodal stiffness) operator A = d0^T diag(*1) d0
+        is symmetric and SPD once grounded (constant is its only null vector)."""
+        script = load_script()
+
+        mesh = script.load_mesh(SCVT_MESH_ROOT / "480km")
+        A = script.assemble_cotangent_laplacian_ungrounded(mesh)
+        n = mesh.n_edges_on_cell.size
+        grounded = A[1:n][:, 1:n].tocsr()
+
+        # Symmetric to machine precision.
+        self.assertEqual((abs(grounded - grounded.T) > 1e-9).nnz, 0)
+
+        # Positive-definite: smallest algebraic eigenvalue strictly positive.
+        lam_min = spla.eigsh(grounded, k=1, which="SA", return_eigenvectors=False)[0]
+        self.assertGreater(lam_min, 0.0)
+
+    @unittest.skipUnless(
+        (SCVT_MESH_ROOT / "480km" / "grid.nc").exists(),
+        "480km SCVT mesh bundle not available",
+    )
+    def test_cotangent_matches_baseline_in_bulk(self):
+        """In the hexagonal bulk (well-centred Delaunay-dual edges) the accumulated
+        cotangent Hodge weight 1/2(cot a + cot b) equals the baseline lumped Hodge
+        edge_weight = dvEdge/dcEdge to a few percent. The two differ only near the
+        pentagons (where circumcentric l_e/d_e is not the true cotangent)."""
+        script = load_script()
+
+        mesh = script.load_mesh(SCVT_MESH_ROOT / "480km")
+        cot_weight = script.cotangent_edge_weight(mesh)
+        baseline = np.asarray(mesh.edge_weight, dtype=float)
+
+        # Bulk edges: both incident cells are hexagons and every cell of every
+        # Delaunay triangle touching the edge is a hexagon (away from pentagons).
+        bulk = script.bulk_edge_mask(mesh)
+        self.assertGreater(int(np.count_nonzero(bulk)), 0)
+
+        relative = np.abs(cot_weight[bulk] - baseline[bulk]) / np.abs(baseline[bulk])
+        self.assertLess(float(np.max(relative)), 0.05)
+
+    @unittest.skipUnless(
+        (SCVT_MESH_ROOT / "60km" / "grid.nc").exists(),
+        "60km SCVT mesh bundle not available",
+    )
+    @unittest.expectedFailure  # NO-GO 2026-06-18; see notes/2026-06-18-poisson-mfd-bakeoff.md
+    def test_cotangent_restores_second_order_Y42(self):
+        """THE SPHERE GATE (variant=cotangent). NO-GO: the global, interface-free
+        diagonal cotangent Hodge (P1 nodal stiffness on the Delaunay triangulation)
+        does NOT restore second order (achieved L2 ~1.22 vs the >=1.9 target).
+
+        Root cause: the icosahedral SCVT mesh is essentially well-centred EVERYWHERE
+        - even at the 12 pentagons the dual edge sits at the Delaunay circumcentre,
+        so the cotangent identity 1/2(cot a + cot b) = l_e/d_e holds to ~6e-4 on
+        every edge. The cotangent operator is therefore numerically identical to the
+        baseline two-point operator (max|cot - base| ~ 3e-16) and inherits its ~1.2
+        slope. The residual is the cell-centred scheme's intrinsic finite-volume
+        truncation error on the optimized SCVT, not a pentagon Hodge defect the
+        cotangent weight could correct. Retained as an expected failure documenting
+        the gate verdict. See notes/2026-06-18-poisson-mfd-bakeoff.md."""
+        script = load_script()
+
+        slopes = script.convergence_Y42(
+            meshes=["480km", "240km", "120km", "60km"], variant="cotangent"
+        )
+        self.assertGreaterEqual(slopes["l2"], 1.9)  # NO-GO: cotangent L2 ~1.22
+
     def test_neighbor_cells_within_rings_expands_from_center_cell(self):
         script = load_script()
 
