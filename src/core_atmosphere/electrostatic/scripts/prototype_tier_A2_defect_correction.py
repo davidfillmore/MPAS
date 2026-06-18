@@ -430,15 +430,18 @@ def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz):
 
     ``cell_xyz`` holds the cell-center (primal vertex) coordinates, ``edge_list``
     holds the primal edges as ``(cell_a, cell_b)`` index pairs, and
-    ``vertices_xyz`` holds the dual (Voronoi) corner coordinates. The block is
-    the lowest-order Whitney edge-mass matrix on the local Delaunay
-    triangulation, symmetrically calibrated so its diagonal reproduces the
-    DEC-consistent Hodge ``l_e / d_e`` (the discrete Whitney edge-mass diagonal
-    is a fixed constant times ``l_e / d_e`` in the regular limit; the
-    calibration removes that constant while preserving the off-diagonal Whitney
-    coupling that distinguishes irregular neighborhoods). The result is
-    symmetric, SPD by construction, and reduces to the diagonal lumped Hodge
-    when the local edges decouple (the regular-hexagon limit).
+    ``vertices_xyz`` holds the dual (Voronoi) corner coordinates (each is the
+    circumcenter of one local Delaunay triangle, used to recover the
+    triangulation). The block is the assembled lowest-order Whitney edge-mass
+    matrix ``M[e, e'] = sum_T integral_T w_e . w_e'`` over the local triangles,
+    restricted to the listed edges. It is symmetric and SPD by construction, and
+    carries genuine off-diagonal coupling whenever listed edges share a triangle.
+
+    Note the discrete Whitney edge-mass diagonal is not the lumped Hodge: for an
+    interior edge in the equilateral (regular-hexagon) limit it equals exactly
+    ``5/6 * l_e / d_e`` (the lumped diagonal Hodge is recovered only by an
+    explicit lumping/calibration step, which this block deliberately does not
+    apply).
     """
     cell_xyz = np.asarray(cell_xyz, dtype=float)
     vertices_xyz = np.asarray(vertices_xyz, dtype=float)
@@ -451,9 +454,8 @@ def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz):
 
     triangles = _reconstruct_local_triangles(cell_xyz, vertices_xyz)
     mass = np.zeros((n_edge, n_edge))
-    incident_vertices = {column: [] for column in range(n_edge)}
 
-    for triple, vertex_index in triangles:
+    for triple, _vertex_index in triangles:
         local_mass, local_pairs = whitney_triangle_mass(cell_xyz[list(triple)])
         local_columns = []
         for (local_i, local_j) in local_pairs:
@@ -464,31 +466,12 @@ def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz):
         for row in range(3):
             if local_columns[row] is None:
                 continue
-            incident_vertices[local_columns[row]].append(vertex_index)
             for column in range(3):
                 if local_columns[column] is None:
                     continue
                 mass[local_columns[row], local_columns[column]] += local_mass[row, column]
 
-    scale = np.ones(n_edge)
-    for column, (cell_a, cell_b) in enumerate(edge_list):
-        dual_distance = float(np.linalg.norm(cell_xyz[cell_a] - cell_xyz[cell_b]))
-        flanking = list(dict.fromkeys(incident_vertices[column]))
-        if len(flanking) >= 2:
-            primal_length = float(
-                np.linalg.norm(vertices_xyz[flanking[0]] - vertices_xyz[flanking[1]])
-            )
-        elif len(flanking) == 1:
-            primal_length = dual_distance / math.sqrt(3.0)
-        else:
-            primal_length = dual_distance
-        target = primal_length / dual_distance if dual_distance > 0.0 else 0.0
-        if mass[column, column] > 0.0 and target > 0.0:
-            scale[column] = math.sqrt(target / mass[column, column])
-
-    hodge = (scale[:, None] * mass) * scale[None, :]
-    hodge = 0.5 * (hodge + hodge.T)
-    return hodge
+    return 0.5 * (mass + mass.T)
 
 
 def regular_hex_patch():
@@ -529,6 +512,39 @@ def regular_hex_patch():
         vertices_xyz=np.asarray(vertices, dtype=float),
         edge_len=np.asarray(edge_len, dtype=float),
         edge_dc=np.asarray(edge_dc, dtype=float),
+    )
+
+
+def connected_hex_patch():
+    """Return a connected regular-hexagon Delaunay neighborhood for Whitney tests.
+
+    A central cell with six equidistant neighbors forms six equilateral fan
+    triangles; the dual vertices are their circumcenters. The listed edges are
+    the six spokes (center-to-neighbor), each interior (shared by two fan
+    triangles), so neighboring spokes share a triangle and the Whitney block has
+    genuinely non-zero off-diagonals. Exposes the same fields as
+    ``regular_hex_patch``: ``cell_xyz``, ``edge_list``, ``vertices_xyz``,
+    ``edge_len`` (dual length l_e) and ``edge_dc`` (primal length d_e).
+    """
+    cells = [[0.0, 0.0, 0.0]]
+    for corner in range(6):
+        angle = math.pi / 3.0 * corner
+        cells.append([math.cos(angle), math.sin(angle), 0.0])
+    cells = np.asarray(cells, dtype=float)
+
+    edges = [[0, corner + 1] for corner in range(6)]
+    vertices = []
+    for corner in range(6):
+        first = corner + 1
+        second = (corner + 1) % 6 + 1
+        vertices.append((cells[0] + cells[first] + cells[second]) / 3.0)
+
+    return SimpleNamespace(
+        cell_xyz=cells,
+        edge_list=np.asarray(edges, dtype=int),
+        vertices_xyz=np.asarray(vertices, dtype=float),
+        edge_len=np.full(6, 1.0 / math.sqrt(3.0)),
+        edge_dc=np.ones(6),
     )
 
 

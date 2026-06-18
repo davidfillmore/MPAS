@@ -171,19 +171,26 @@ class DefectCorrectionPrototypeTests(unittest.TestCase):
         self.assertTrue(np.allclose(H, H.T, atol=1e-12))
         self.assertTrue(np.all(np.linalg.eigvalsh(H) > 0.0))
 
-    def test_whitney_hodge_reduces_to_diagonal_on_regular_hex(self):
+    def test_whitney_hodge_diagonal_is_five_sixths_lumped_on_connected_hex(self):
+        # The lowest-order Whitney edge-mass diagonal is NOT the lumped Hodge: for
+        # an interior edge in the equilateral (regular-hex) limit it equals exactly
+        # 5/6 * (l_e / d_e). Exercise a connected patch whose spokes share fan
+        # triangles, so the block has genuinely non-zero off-diagonal coupling.
         script = load_script()
 
-        geom = script.regular_hex_patch()
+        geom = script.connected_hex_patch()
         H = script.whitney_hodge_block(
             geom.cell_xyz, geom.edge_list, geom.vertices_xyz
         )
-        lumped = np.diag(geom.edge_len / geom.edge_dc)
-        self.assertLess(
-            np.max(np.abs(H - np.diag(np.diag(H)))),
-            1e-2 * np.max(np.diag(H)),
-        )
-        self.assertTrue(np.allclose(np.diag(H), np.diag(lumped), rtol=0.05))
+
+        self.assertTrue(np.allclose(H, H.T, atol=1e-12))
+        self.assertTrue(np.all(np.linalg.eigvalsh(H) > 0.0))
+
+        off_diagonal = H - np.diag(np.diag(H))
+        self.assertGreater(np.max(np.abs(off_diagonal)), 1e-3 * np.max(np.diag(H)))
+
+        expected_diagonal = (5.0 / 6.0) * (geom.edge_len / geom.edge_dc)
+        self.assertTrue(np.allclose(np.diag(H), expected_diagonal, rtol=1e-9))
 
     def test_neighbor_cells_within_rings_expands_from_center_cell(self):
         script = load_script()
