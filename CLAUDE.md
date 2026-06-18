@@ -112,3 +112,5 @@ Test cases are run from `~/Data/MPAS/`, separate from the source tree:
    or remove it before re-running.
 5. **LANDUSE.TBL is required** in the run directory even when
    `config_physics_suite='none'`.
+6. **Reply format.** Present all replies as brief, succinct lists — three items
+   at a time.
