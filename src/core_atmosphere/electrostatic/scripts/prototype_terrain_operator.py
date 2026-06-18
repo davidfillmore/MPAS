@@ -285,3 +285,105 @@ def assemble_terrain_operator(grid, eps, ground_cell=0):
     A[:, ground_cell] = 0.0
     A[ground_cell, ground_cell] = diag_g
     return A.tocsr()
+
+
+# =============================================================================
+# Task A3 — operator-only MMS convergence gate (THE GATE)
+# =============================================================================
+#
+# Measures whether A = Gᵀ W G is CONSISTENT (~2nd order) on the sloped mesh by
+# applying the operator to a manufactured field and comparing to the consistent
+# finite-volume right-hand side on INTERIOR cells.
+#
+# Manufactured solution (function of PHYSICAL x, z):
+#     phi_exact(x, z) = sin(kx*x) * sin(kz*z),     kx = 2*pi/L, kz = pi/H
+# Continuous operator (constant eps):
+#     -div(eps grad phi) = eps*(kx^2 + kz^2) * phi_exact
+# The discrete operator A integrates -div(eps grad phi) over each physical cell
+# volume V_cell = dx * dz_physical (dz_physical = dx*dzeta/zz = grid.dz), so the
+# CONSISTENT FV right-hand side is
+#     b_c = eps*(kx^2 + kz^2) * phi_sampled_c * V_cell_c .
+# This V_cell weighting matches the W = eps * dx*dzeta/zz face weighting A2 uses.
+#
+# Residual r = A @ phi_sampled - b, measured as the relative L2 norm over
+# INTERIOR cells only — the top/bottom boundary rows (k = 0, k = nz-1) carry the
+# one-sided d_zeta stencil and are excluded so the bulk truncation order is
+# isolated, not the boundary stencil.
+#
+# Note on grounding: the residual uses the RAW (un-grounded) A = Gᵀ W G, built
+# from the same A2 terrain_gradient/terrain_weight blocks.  Grounding is a
+# single-cell Dirichlet boundary condition (zeroes one row AND column); zeroing
+# the column injects an O(1) defect into that cell's interior neighbour, which
+# would contaminate — and at fine resolution dominate — the truncation measure.
+# The interior-stencil consistency that this gate measures is a property of
+# Gᵀ W G independent of that boundary condition, so the ungrounded operator is
+# the honest object to measure.
+
+
+def _mms_residual_relative_l2(grid, eps, kx, kz):
+    """Relative L2 norm of the operator-only MMS residual over interior cells.
+
+    r = (Gᵀ W G) @ phi_sampled - b, with b the consistent FV right-hand side
+    eps*(kx^2+kz^2)*phi*V_cell.  Interior excludes the k=0 and k=nz-1 boundary
+    rows (one-sided d_zeta stencil).  Cell ordering c(i,k) = i*nz + k.
+    """
+    nx = grid.x.size
+    nz = grid.zeta.size
+
+    G = terrain_gradient(grid)
+    W = terrain_weight(grid, eps)
+    A = (G.T @ W @ G).tocsr()
+
+    # Manufactured field sampled at physical cell centres (nx, nz).
+    phi = np.sin(kx * grid.x)[:, np.newaxis] * np.sin(kz * grid.z)
+
+    # Physical cell volume dx * dz_physical (dz = dx*dzeta/zz column thickness).
+    V_cell = grid.dx * grid.dz
+    b = eps * (kx ** 2 + kz ** 2) * phi * V_cell
+
+    r = A @ phi.reshape(-1) - b.reshape(-1)
+
+    # Interior mask: drop top/bottom boundary rows (one-sided d_zeta stencil).
+    mask = np.zeros((nx, nz), dtype=bool)
+    mask[:, 1:nz - 1] = True
+    mask = mask.reshape(-1)
+
+    r_norm = np.linalg.norm(r[mask])
+    b_norm = np.linalg.norm(b.reshape(-1)[mask])
+    return r_norm / b_norm
+
+
+def terrain_mms_order(
+    hill_fraction,
+    grids=((32, 24), (64, 48), (128, 96)),
+    L=1.0,
+    H=1.0,
+    eps=1.0,
+    return_details=False,
+):
+    """Finest-two-mesh log-log convergence slope of the operator-only residual.
+
+    Refines through ``grids`` (each doubling nx, nz), measures the interior
+    relative-L2 residual of A = Gᵀ W G against the consistent FV right-hand
+    side, and fits the slope of the finest two meshes (h ~ 1/nx).
+
+    hill_fraction : surface hill amplitude as a fraction of H (0 => flat).
+    return_details : if True, also return (grids, errors) for reporting.
+    """
+    hill_height = hill_fraction * H
+    kx = 2.0 * math.pi / L
+    kz = math.pi / H
+
+    errs = []
+    for nx, nz in grids:
+        g = terrain_grid(nx, nz, hill_height, L, H)
+        errs.append(_mms_residual_relative_l2(g, eps, kx, kz))
+
+    # Finest two meshes: h halves between them, so log ratio over log(2).
+    h_coarse = 1.0 / grids[-2][0]
+    h_fine = 1.0 / grids[-1][0]
+    slope = math.log(errs[-2] / errs[-1]) / math.log(h_coarse / h_fine)
+
+    if return_details:
+        return slope, list(grids), errs
+    return slope

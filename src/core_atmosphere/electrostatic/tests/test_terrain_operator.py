@@ -171,5 +171,28 @@ class TerrainOperatorTests(unittest.TestCase):
         self.assertLess(max_err, 1e-12)
 
 
+class TerrainMMSOrderTests(unittest.TestCase):
+    """Task A3 — THE GATE: operator-only MMS convergence order.
+
+    The flat case (hill_fraction=0) must reproduce ~2nd order; it is the
+    honesty guard on the residual measure (V_cell scaling + interior mask).
+    The hill case (0.3*H) is the gate proper: GO if the slope-corrected
+    operator stays ~2nd order on the sloped mesh.
+    """
+
+    def test_flat_operator_is_second_order(self):
+        """Honesty guard: flat grid reproduces ~2nd order (validates b/V_cell/mask)."""
+        script = load_script()
+        slope = script.terrain_mms_order(hill_fraction=0.0)
+        self.assertGreater(slope, 1.9)
+        self.assertLess(slope, 2.1)
+
+    def test_terrain_operator_is_second_order_on_hill(self):
+        """THE GATE: slope-corrected operator stays ~2nd order on a 0.3*H hill."""
+        script = load_script()
+        slope = script.terrain_mms_order(hill_fraction=0.3)
+        self.assertGreaterEqual(slope, 1.9)
+
+
 if __name__ == "__main__":
     unittest.main()
