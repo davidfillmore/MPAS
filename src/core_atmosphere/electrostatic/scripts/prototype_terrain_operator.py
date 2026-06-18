@@ -505,29 +505,152 @@ def _terrain_mfd_blocks(grid, eps):
     return mfd, n_cells, faces, face_cells, blocks
 
 
+# --- Whitney / P1 scalar-Hodge path (the bake-off PIVOT, the GO variant) -------
+# Variant "mfd" above is mis-formulated: A0's mimetic_hodge_block satisfies
+# T·C = eps·N with C the HALF-cell face-centroid offset (the mixed/face-pressure
+# convention), so it is the wrong primitive for A = d0ᵀ H d0 (full cell-to-cell
+# differences); its dense opposite-face coupling injects a spurious distance-2
+# stencil and it diverges on the hill.  The consistent route is the lowest-order
+# Whitney/DEC SCALAR edge-Hodge: A = d0ᵀ ⋆₁ d0 with a PLAIN ±1 incidence and ⋆₁
+# the DIAGONAL cotangent Hodge (l_e/d_e), assembled per triangle from
+# mfd_operator.cotangent_hodge_weights.  This is the P1 nodal stiffness on a
+# triangulation of the PHYSICAL cell centres, so the terrain slope enters purely
+# through the triangle geometry.  See that helper's docstring for why the full
+# Whitney 1-form edge-mass (off-diagonals) is NOT the scalar operator.
+
+
+def terrain_center_triangulation(grid):
+    """Triangulate the physical (x, z) cell-centre grid -> (points, triangles).
+
+    Cell centres are at physical ``(grid.x[i], grid.z[i,k])`` with flat index
+    ``c(i,k)=i*nz+k``.  Each primal quad of centres
+    ``{(i,k),(i+1,k),(i+1,k+1),(i,k+1)}`` (periodic in i, k=0..nz-2) is split by
+    the FIXED diagonal (i,k)-(i+1,k+1) into two triangles.  The fixed diagonal is
+    deliberate: alternating it (criss-cross) breaks consistency on the sloped
+    mesh (verified: hill slope collapses to ~0).  The periodic seam in x is
+    handled by unwrapping the right column's x by +L inside each seam triangle so
+    triangle areas/angles are physical.
+
+    Returns ``(points, triangles)``: ``points`` is (n_cells, 2) physical centre
+    coordinates (un-unwrapped); ``triangles`` is a list of
+    ``(cell_triple, triangle_xyz)`` with ``triangle_xyz`` the (3, 3) seam-unwrapped
+    corner coordinates (z=0 third component) ready for the Hodge primitive.
+    """
+    nx, nz = grid.x.size, grid.zeta.size
+    L = nx * grid.dx
+    z = grid.z                                   # (nx, nz) physical centre heights
+
+    def cell(i, k):
+        return (i % nx) * nz + k
+
+    points = np.empty((nx * nz, 2))
+    for i in range(nx):
+        for k in range(nz):
+            points[cell(i, k)] = (grid.x[i], z[i, k])
+
+    def xyz(c, xshift):
+        return np.array([points[c, 0] + xshift, points[c, 1], 0.0])
+
+    triangles = []
+    for i in range(nx):
+        ip = (i + 1) % nx
+        xshift = L if ip < i else 0.0           # unwrap periodic seam
+        for k in range(nz - 1):
+            c00, c10 = cell(i, k), cell(ip, k)
+            c11, c01 = cell(ip, k + 1), cell(i, k + 1)
+            p00, p01 = xyz(c00, 0.0), xyz(c01, 0.0)
+            p10, p11 = xyz(c10, xshift), xyz(c11, xshift)
+            # Fixed diagonal c00-c11.
+            triangles.append(((c00, c10, c11), np.array([p00, p10, p11])))
+            triangles.append(((c00, c11, c01), np.array([p00, p11, p01])))
+    return points, triangles
+
+
+def _whitney_terrain_operator_ungrounded(grid, eps):
+    """Ungrounded A = d0ᵀ ⋆₁ d0 (scalar diagonal Hodge) on the centre triangulation.
+
+    ⋆₁ is the per-edge sum of cotangent half-weights from
+    ``mfd_operator.cotangent_hodge_weights`` over the local triangles; ``d0`` is
+    the plain ±1 cell-difference incidence ``(d0 φ)_e = φ[b]−φ[a]``.  Single
+    source for both the grounded operator and the residual measure.
+    """
+    mfd = _mfd_mod()
+    n_cells = grid.x.size * grid.zeta.size
+    _, triangles = terrain_center_triangulation(grid)
+
+    edge_index = {}
+    star = {}
+
+    def edge_id(a, b):
+        key = (min(a, b), max(a, b))
+        e = edge_index.get(key)
+        if e is None:
+            e = len(edge_index)
+            edge_index[key] = e
+        return e
+
+    for triple, tri_xyz in triangles:
+        weights, local_pairs = mfd.cotangent_hodge_weights(tri_xyz)
+        for m, (la, lb) in enumerate(local_pairs):
+            e = edge_id(triple[la], triple[lb])
+            star[e] = star.get(e, 0.0) + eps * weights[m]
+
+    n_edges = len(edge_index)
+    star_diag = np.array([star[e] for e in range(n_edges)])
+    dr, dc, dd = [], [], []
+    for (a, b), e in edge_index.items():
+        dr.extend((e, e)); dc.extend((a, b)); dd.extend((-1.0, 1.0))
+    d0 = sp.csr_matrix((dd, (dr, dc)), shape=(n_edges, n_cells))
+    H = sp.diags(star_diag)
+    A = (d0.T @ H @ d0).tocsr()
+    return 0.5 * (A + A.T)
+
+
+def _terrain_operator_ungrounded(grid, eps, variant):
+    """Ungrounded terrain operator for a given variant (shared by operator + measure)."""
+    if variant == "mfd":
+        mfd, n_cells, faces, face_cells, blocks = _terrain_mfd_blocks(grid, eps)
+        return mfd.assemble_dT_H_d(n_cells, faces, blocks, face_cells, ground_cell=None)
+    if variant == "whitney":
+        return _whitney_terrain_operator_ungrounded(grid, eps)
+    raise ValueError(
+        f"terrain mesh supports variant 'mfd' or 'whitney', got {variant!r}"
+    )
+
+
+def _ground_operator(A, ground_cell):
+    """Return A with one cell grounded (Dirichlet gauge): zero its row/col, keep diag."""
+    A = A.tolil()
+    diag_g = A[ground_cell, ground_cell]
+    A[ground_cell, :] = 0.0
+    A[:, ground_cell] = 0.0
+    A[ground_cell, ground_cell] = diag_g
+    return A.tocsr()
+
+
 def mfd_terrain_operator(grid, eps, variant="mfd", ground_cell=0):
-    """Grounded globally-consistent terrain operator A = d0ᵀ H d0."""
-    if variant != "mfd":
-        raise ValueError(f"terrain mesh supports variant 'mfd', got {variant!r}")
-    mfd, n_cells, faces, face_cells, blocks = _terrain_mfd_blocks(grid, eps)
-    return mfd.assemble_dT_H_d(n_cells, faces, blocks, face_cells, ground_cell)
+    """Grounded globally-consistent terrain operator A = d0ᵀ H d0.
+
+    ``variant="mfd"``     -> A0 mimetic-block route (mis-formulated; see notes).
+    ``variant="whitney"`` -> lowest-order Whitney/P1 scalar Hodge (the GO route).
+    """
+    A = _terrain_operator_ungrounded(grid, eps, variant)
+    return _ground_operator(A, ground_cell)
 
 
 def _mms_residual_relative_l2_mfd(grid, eps, kx, kz, variant):
-    """Operator-only MMS residual (interior, relative L2) for the MFD operator.
+    """Operator-only MMS residual (interior, relative L2) for a terrain variant.
 
     Same measure as ``_mms_residual_relative_l2``: the RAW (un-grounded) operator
-    against the consistent FV right-hand side eps*(kx^2+kz^2)*phi*V_cell, over
-    interior cells only.  The un-grounded ``A = d0ᵀ H d0`` is assembled by
-    ``mfd_operator.assemble_dT_H_d`` with ``ground_cell=None`` (grounding would
-    inject an O(1) defect at the gauge cell's neighbour and contaminate the order).
+    against the consistent right-hand side eps*(kx^2+kz^2)*phi*V_cell, over
+    interior cells only (grounding would inject an O(1) defect at the gauge cell's
+    neighbour and contaminate the order).  The FV point·V_cell load is also the
+    leading (lumped-mass) Galerkin load for the P1 Whitney operator, so the same
+    measure validates both variants -- and the flat guard confirms slope ~2.0 for
+    Whitney with it (no measure change was needed for the pivot).
     """
-    if variant != "mfd":
-        raise ValueError(f"terrain mesh supports variant 'mfd', got {variant!r}")
     nx, nz = grid.x.size, grid.zeta.size
-    mfd, n_cells, faces, face_cells, blocks = _terrain_mfd_blocks(grid, eps)
-    A = mfd.assemble_dT_H_d(n_cells, faces, blocks, face_cells, ground_cell=None)
-
+    A = _terrain_operator_ungrounded(grid, eps, variant)
     phi = np.sin(kx * grid.x)[:, np.newaxis] * np.sin(kz * grid.z)
     V_cell = grid.dx * grid.dz
     b = eps * (kx ** 2 + kz ** 2) * phi * V_cell
@@ -541,7 +664,7 @@ def _mms_residual_relative_l2_mfd(grid, eps, kx, kz, variant):
 def terrain_mms_order_mfd(hill_fraction, variant="mfd",
                           grids=((32, 24), (64, 48), (128, 96)),
                           L=1.0, H=1.0, eps=1.0, return_details=False):
-    """Finest-two MMS slope of the MFD terrain operator (mirrors terrain_mms_order)."""
+    """Finest-two MMS slope of the terrain operator (mirrors terrain_mms_order)."""
     hill_height = hill_fraction * H
     kx, kz = 2.0 * math.pi / L, math.pi / H
     errs = []

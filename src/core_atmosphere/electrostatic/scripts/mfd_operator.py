@@ -75,6 +75,54 @@ def assemble_dT_H_d(n_cells, faces, blocks, face_cells, ground_cell=0):
     return A.tocsr()
 
 
+def cotangent_hodge_weights(triangle_xyz):
+    """Per-triangle contribution to the DIAGONAL scalar edge-Hodge ``⋆₁``.
+
+    This is the lowest-order discrete-exterior-calculus (DEC) / lowest-order
+    Whitney scalar Hodge that pairs with a PLAIN ±1 incidence ``d0`` to give the
+    consistent scalar Poisson operator ``A = d0ᵀ ⋆₁ d0`` (the cotangent / P1
+    nodal stiffness).  For an interior primal edge ``e`` shared by two triangles
+    the accumulated weight equals ``½(cot α + cot β) = l_e / d_e`` (dual-edge
+    length over primal-edge length), exactly the Voronoi/Delaunay scalar Hodge.
+
+    Returns ``(weights, local_pairs)`` with ``local_pairs = [(0,1),(1,2),(0,2)]``
+    and ``weights[m]`` the cotangent half-weight of local edge ``local_pairs[m]``
+    (the cotangent of the angle at the opposite vertex, times ½).  Sum these over
+    all triangles into a per-edge diagonal ``⋆₁``.
+
+    NOTE — why NOT the full Whitney 1-form edge-mass.  The lowest-order Whitney
+    *1-form* mass ``M₁ = ∫ w_e·w_e'`` (``prototype_tier_A2``'s
+    ``whitney_triangle_mass``) is a DIFFERENT object: its DIAGONAL is
+    ``5/6·l_e/d_e`` (proportional to ⋆₁) but its OFF-DIAGONALS make
+    ``d0ᵀ M₁ d0`` NOT the scalar Laplacian — assembling it everywhere on a
+    structured terrain mesh fails the flat 2nd-order guard (slope ≈ −0.02). The
+    scalar Poisson operator needs the DIAGONAL Hodge built here. (On the sphere
+    side ``M₁`` is used only as a localized few-edge defect enrichment, with the
+    diagonal ``l_e/d_e`` retained on every bulk edge — consistent with this.)
+    """
+    p = np.asarray(triangle_xyz, dtype=float)
+    if p.shape[1] == 3:
+        # Work in the triangle's own plane (z≈0 embedding is fine, but be general).
+        e0 = p[1] - p[0]
+        e1 = p[2] - p[0]
+        u = e0 / np.linalg.norm(e0)
+        w = e1 - (e1 @ u) * u
+        v = w / np.linalg.norm(w)
+        p = np.column_stack(((p - p[0]) @ u, (p - p[0]) @ v))
+    local_pairs = [(0, 1), (1, 2), (0, 2)]
+    # cot of the angle at vertex i is the weight of the OPPOSITE edge (j,k).
+    weight_by_edge = {}
+    for i in range(3):
+        j, k = (i + 1) % 3, (i + 2) % 3
+        a = p[j] - p[i]
+        b = p[k] - p[i]
+        cross = abs(a[0] * b[1] - a[1] * b[0])
+        cot = (a @ b) / cross if cross > 1e-300 else 0.0
+        weight_by_edge[frozenset((j, k))] = 0.5 * cot
+    weights = np.array([weight_by_edge[frozenset(pair)] for pair in local_pairs])
+    return weights, local_pairs
+
+
 def spd_min_eig(A_csr):
     """Smallest algebraic eigenvalue (SPD check) of a grounded operator."""
     return float(spla.eigsh(A_csr, k=1, which="SA", return_eigenvectors=False)[0])

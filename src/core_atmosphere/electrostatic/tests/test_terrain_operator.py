@@ -243,5 +243,42 @@ class MFDTerrainTests(unittest.TestCase):
         self.assertGreaterEqual(slope, 1.9)
 
 
+class WhitneyTerrainTests(unittest.TestCase):
+    """Bake-off pivot: the lowest-order Whitney/P1 scalar Hodge operator on the
+    x-z terrain mesh, built on a triangulation of the physical cell centres.
+
+    A = d0ᵀ ⋆₁ d0 with PLAIN ±1 incidence d0 and ⋆₁ the DIAGONAL scalar edge
+    Hodge (l_e/d_e, the cotangent weight) assembled per triangle from the proven
+    lowest-order Whitney/DEC primitive.  Unlike variant "mfd", the slope enters
+    through the physical triangle geometry and the operator is consistent.
+    """
+
+    def test_whitney_flat_honesty_guard_is_second_order(self):
+        """Flat (hill=0) Whitney operator must reproduce slope ~2.0 (validates the
+        residual measure + triangulation + diagonal-Hodge assembly)."""
+        script = load_script()
+        slope = script.terrain_mms_order_mfd(hill_fraction=0.0, variant="whitney")
+        self.assertGreater(slope, 1.9)
+        self.assertLess(slope, 2.1)
+
+    def test_whitney_operator_is_spd_on_hill(self):
+        """The grounded A = d0ᵀ ⋆₁ d0 is symmetric and SPD on the 0.3*H hill."""
+        script = load_script()
+        nx, nz = 24, 16
+        g = script.terrain_grid(nx, nz, hill_height=0.3, L=1.0, H=1.0)
+        A = script.mfd_terrain_operator(g, eps=1.0, variant="whitney")
+        self.assertEqual((abs(A - A.T) > 1e-9).nnz, 0)
+        from numpy.linalg import eigvalsh
+        self.assertGreater(eigvalsh(A.toarray()).min(), 0.0)
+
+    def test_whitney_terrain_is_second_order_on_hill(self):
+        """THE TERRAIN GATE (GO). The Whitney/P1 scalar Hodge operator stays
+        ~2nd order on the 0.3*H hill (slope ~1.96), vs the naive GtWG's -0.52 and
+        the mis-formulated variant-M's divergence."""
+        script = load_script()
+        slope = script.terrain_mms_order_mfd(hill_fraction=0.3, variant="whitney")
+        self.assertGreaterEqual(slope, 1.9)
+
+
 if __name__ == "__main__":
     unittest.main()
