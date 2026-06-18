@@ -223,6 +223,18 @@ class DefectCorrectionPrototypeTests(unittest.TestCase):
         lam_min = spla.eigsh(A, k=1, which="SA", return_eigenvectors=False)[0]
         self.assertGreater(lam_min, 0.0)
 
+    @unittest.skipUnless(
+        (SCVT_MESH_ROOT / "60km" / "grid.nc").exists(),
+        "60km SCVT mesh bundle not available",
+    )
+    def test_enriched_restores_second_order_Y42(self):
+        script = load_script()
+
+        slopes = script.convergence_Y42(
+            meshes=["480km", "240km", "120km", "60km"], enrich=True, k_rings=1
+        )
+        self.assertGreaterEqual(slopes["l2"], 1.9)  # baseline is ~1.38
+
     def test_neighbor_cells_within_rings_expands_from_center_cell(self):
         script = load_script()
 

@@ -495,30 +495,20 @@ def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz=None, triangles=None):
     return 0.5 * (mass + mass.T)
 
 
-def assemble_enriched_laplacian(mesh, k_rings):
-    """Return the SPD enriched horizontal Laplacian ``A = d0^T H1 d0`` (grounded).
+def assemble_enriched_laplacian_ungrounded(mesh, k_rings):
+    """Return the symmetric PSD enriched horizontal operator ``d0^T H1 d0``.
 
-    ``d0`` is the signed cell-difference incidence (edges x cells) built from the
-    mesh ``cellsOnEdge`` adjacency; ``d0 @ phi`` is the discrete edge gradient and
-    ``d0^T`` the divergence. ``H1`` is the edge Hodge star:
+    This is the ungrounded ``A = d0^T H1 d0`` of shape ``(nCells, nCells)``,
+    symmetric positive-semidefinite with the constant potential as its only null
+    vector. :func:`assemble_enriched_laplacian` wraps this and grounds one cell
+    for the SPD solve; the operator-only convergence diagnostic
+    (:func:`convergence_Y42`) uses this ungrounded form so the discrete operator
+    can be applied to every cell without a Dirichlet perturbation at the grounded
+    cell. ``A`` approximates ``-area * laplacian`` cell-by-cell: dividing
+    ``-(A @ phi)`` by the cell area recovers the same finite-volume Laplacian the
+    baseline two-point assembly produces (identical to it on bulk edges).
 
-    - **Bulk** edges (graph distance to the nearest non-hex cell greater than
-      ``k_rings``) keep the diagonal lumped Hodge ``l_e / d_e`` (``edge_weight``),
-      exactly the baseline two-point assembly.
-    - **Defect** edges (within ``k_rings``) take their Hodge entries from the
-      consistent Whitney 1-form edge-mass block (:func:`whitney_hodge_block`),
-      assembled over the local Delaunay triangles. The triangles are recovered
-      from the mesh's EXPLICIT ``cellsOnVertex`` topology - not a nearest-cell
-      heuristic - so distorted real Voronoi cells are handled correctly.
-
-    Overlapping pentagon neighborhoods are merged into one global Whitney block,
-    so no edge's Hodge is double-counted: every edge gets either the diagonal
-    entry or the Whitney entries, never both.
-
-    The ungrounded ``d0^T H1 d0`` is symmetric positive-semidefinite with the
-    constant potential as its only null vector. Grounding one cell (Dirichlet)
-    removes that null space, returning the symmetric positive-definite operator
-    as a SciPy CSR matrix of shape ``(nCells - 1, nCells - 1)``.
+    See :func:`assemble_enriched_laplacian` for the Hodge-block construction.
     """
     import scipy.sparse as sp
 
@@ -623,6 +613,36 @@ def assemble_enriched_laplacian(mesh, k_rings):
 
     operator = (incidence.T @ hodge @ incidence).tocsr()
     operator = 0.5 * (operator + operator.T)
+    return operator
+
+
+def assemble_enriched_laplacian(mesh, k_rings):
+    """Return the SPD enriched horizontal Laplacian ``A = d0^T H1 d0`` (grounded).
+
+    ``d0`` is the signed cell-difference incidence (edges x cells) built from the
+    mesh ``cellsOnEdge`` adjacency; ``d0 @ phi`` is the discrete edge gradient and
+    ``d0^T`` the divergence. ``H1`` is the edge Hodge star:
+
+    - **Bulk** edges (graph distance to the nearest non-hex cell greater than
+      ``k_rings``) keep the diagonal lumped Hodge ``l_e / d_e`` (``edge_weight``),
+      exactly the baseline two-point assembly.
+    - **Defect** edges (within ``k_rings``) take their Hodge entries from the
+      consistent Whitney 1-form edge-mass block (:func:`whitney_hodge_block`),
+      assembled over the local Delaunay triangles. The triangles are recovered
+      from the mesh's EXPLICIT ``cellsOnVertex`` topology - not a nearest-cell
+      heuristic - so distorted real Voronoi cells are handled correctly.
+
+    Overlapping pentagon neighborhoods are merged into one global Whitney block,
+    so no edge's Hodge is double-counted: every edge gets either the diagonal
+    entry or the Whitney entries, never both.
+
+    The ungrounded ``d0^T H1 d0`` is symmetric positive-semidefinite with the
+    constant potential as its only null vector. Grounding one cell (Dirichlet)
+    removes that null space, returning the symmetric positive-definite operator
+    as a SciPy CSR matrix of shape ``(nCells - 1, nCells - 1)``.
+    """
+    n_cells = int(mesh.n_edges_on_cell.size)
+    operator = assemble_enriched_laplacian_ungrounded(mesh, k_rings)
 
     # Ground one cell (Dirichlet) to remove the constant null space.
     keep = np.arange(1, n_cells)
@@ -851,6 +871,87 @@ def convergence_slope(rows, key):
     return math.log(coarse[key] / fine[key]) / math.log(coarse["h_m"] / fine["h_m"])
 
 
+DEFAULT_SCVT_RUN_ROOT = pathlib.Path("~/Data/MPAS/poisson_tier_A2_scvt")
+
+
+def operator_residual_Y42(mesh, enrich, k_rings):
+    """Return the global L2/Linf operator-only residual for the Y_4^2 target.
+
+    Reuses the baseline operator-only diagnostic methodology exactly: apply the
+    discrete operator to the normalized analytic Y_4^2 field, then compare the
+    resulting discrete Laplacian against the continuous ``laplacian Y_4^2 =
+    -l(l+1)/R^2 Y_4^2 = -20/R^2 Y_4^2``. The ONLY thing that changes between
+    baseline and enriched is the operator:
+
+    - ``enrich=False`` -> the baseline diagonal-Hodge two-point assembly
+      (:func:`apply_edge_factors_to_laplacian`), identical to the existing
+      baseline in :func:`evaluate_mesh`.
+    - ``enrich=True``  -> the enriched ``A = d0^T H1 d0`` operator
+      (:func:`assemble_enriched_laplacian_ungrounded`). Since ``A`` approximates
+      ``-area * laplacian``, the discrete Laplacian is ``-(A @ phi) / area`` -
+      bringing the enriched operator onto the exact same finite-volume footing
+      as the baseline (the two coincide on bulk edges).
+
+    The residual is the area-weighted global metric over all cells (no exclusion
+    mask), matching the baseline ``"global"`` row.
+    """
+    sample = y42(mesh.lat, mesh.lon)
+    sample = sample / np.max(np.abs(sample))
+    target_laplacian = -20.0 / mesh.sphere_radius**2 * sample
+
+    if enrich:
+        operator = assemble_enriched_laplacian_ungrounded(mesh, k_rings)
+        discrete_laplacian = -(operator @ sample) / mesh.area
+    else:
+        discrete_laplacian = apply_edge_factors_to_laplacian(
+            sample,
+            mesh.area,
+            mesh.edge_weight,
+            mesh.n_edges_on_cell,
+            mesh.cells_on_cell,
+            mesh.edges_on_cell,
+        )
+
+    mask = np.ones(sample.size, dtype=bool)
+    return residual_metrics(discrete_laplacian, target_laplacian, mesh.area, mask)
+
+
+def convergence_Y42(meshes, enrich=False, k_rings=1, run_root=None):
+    """Return finest-two-mesh log-log L2/Linf operator-convergence slopes for Y_4^2.
+
+    For each mesh in ``meshes`` (coarse-to-fine labels such as ``"480km"``),
+    loads the SCVT bundle from ``run_root/meshes/<label>``, measures the global
+    operator-only residual via :func:`operator_residual_Y42`, then fits the
+    finest-pair log-log slope (same fit as the baseline ``convergence_slope``).
+
+    Returns ``{"l2": slope, "linf": slope, "rows": [...]}``. ``run_root``
+    defaults to the Tier A.2 SCVT root so the gate test can call this with only
+    a mesh list.
+    """
+    if run_root is None:
+        run_root = DEFAULT_SCVT_RUN_ROOT
+    run_root = pathlib.Path(run_root).expanduser()
+
+    rows = []
+    for mesh_name in meshes:
+        mesh = load_mesh(run_root / "meshes" / mesh_name)
+        l2, linf = operator_residual_Y42(mesh, enrich, k_rings)
+        rows.append(
+            {
+                "mesh": mesh_name,
+                "h_m": mesh_spacing_m(mesh_name),
+                "l2": l2,
+                "linf": linf,
+            }
+        )
+
+    return {
+        "l2": convergence_slope(rows, "l2"),
+        "linf": convergence_slope(rows, "linf"),
+        "rows": rows,
+    }
+
+
 def mesh_spacing_m(mesh_name):
     """Infer mesh spacing in meters from labels such as 120km."""
     name = mesh_name.lower()
@@ -1047,6 +1148,18 @@ def parse_args(argv=None):
         default="edge-factors",
         help="Correction prototype to apply.",
     )
+    parser.add_argument(
+        "--enrich",
+        action="store_true",
+        help="Run the Y_4^2 operator-only convergence gate using the enriched "
+        "(Whitney-Hodge) operator, reporting baseline-vs-enriched slopes.",
+    )
+    parser.add_argument(
+        "--k-rings",
+        type=int,
+        default=1,
+        help="Defect rings whose edges take the Whitney Hodge in the enriched operator.",
+    )
     parser.add_argument("--min-factor", type=float, default=0.05, help="Lower factor bound.")
     parser.add_argument("--max-factor", type=float, default=4.0, help="Upper factor bound.")
     parser.add_argument(
@@ -1064,9 +1177,36 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
+def print_convergence_Y42(meshes, run_root, k_rings):
+    """Print the operator-only Y_4^2 convergence gate: baseline vs enriched."""
+    baseline = convergence_Y42(meshes, enrich=False, k_rings=k_rings, run_root=run_root)
+    enriched = convergence_Y42(meshes, enrich=True, k_rings=k_rings, run_root=run_root)
+
+    print(f"Y_4^2 operator-only convergence (k_rings={k_rings})")
+    print(f"{'mesh':>8}  {'h_m':>10}  {'baseline_l2':>14}  {'enriched_l2':>14}  "
+          f"{'baseline_linf':>14}  {'enriched_linf':>14}")
+    for base_row, enr_row in zip(baseline["rows"], enriched["rows"]):
+        print(
+            f"{base_row['mesh']:>8}  {base_row['h_m']:>10.1f}  "
+            f"{base_row['l2']:>14.6e}  {enr_row['l2']:>14.6e}  "
+            f"{base_row['linf']:>14.6e}  {enr_row['linf']:>14.6e}"
+        )
+    print(
+        "Finest-two slopes: "
+        f"baseline L2={baseline['l2']:.3f}, enriched L2={enriched['l2']:.3f}, "
+        f"baseline Linf={baseline['linf']:.3f}, enriched Linf={enriched['linf']:.3f}"
+    )
+    print(f"GATE (enriched L2 >= 1.9): {'PASS' if enriched['l2'] >= 1.9 else 'FAIL'}")
+
+
 def main(argv=None):
     args = parse_args(argv)
     args.run_root = args.run_root.expanduser().resolve()
+
+    if args.enrich:
+        print_convergence_Y42(args.mesh_list, args.run_root, args.k_rings)
+        return 0
+
     if args.output is None:
         args.output = args.run_root / "results" / "tier_A2_defect_correction_prototype.csv"
     else:
