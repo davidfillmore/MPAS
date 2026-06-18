@@ -298,9 +298,11 @@ class DefectCorrectionPrototypeTests(unittest.TestCase):
         Root cause: the icosahedral SCVT mesh is essentially well-centred EVERYWHERE
         - even at the 12 pentagons the dual edge sits at the Delaunay circumcentre,
         so the cotangent identity 1/2(cot a + cot b) = l_e/d_e holds to ~6e-4 on
-        every edge. The cotangent operator is therefore numerically identical to the
-        baseline two-point operator (max|cot - base| ~ 3e-16) and inherits its ~1.2
-        slope. The residual is the cell-centred scheme's intrinsic finite-volume
+        every edge. The cotangent and baseline edge weights therefore agree to ~6e-4
+        relative on every edge, so the cotangent residual differs from baseline by
+        only ~6e-4 and inherits its ~1.2 slope (the raw max|(cot-base) @ Y42| / area
+        ~ 3e-16 is a unit artifact of the sphere-area normalization, not operator
+        coincidence). The residual is the cell-centred scheme's intrinsic finite-volume
         truncation error on the optimized SCVT, not a pentagon Hodge defect the
         cotangent weight could correct. Retained as an expected failure documenting
         the gate verdict. See notes/2026-06-18-poisson-mfd-bakeoff.md."""
