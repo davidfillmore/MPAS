@@ -40,7 +40,10 @@ def assemble_dT_H_d(n_cells, faces, blocks, face_cells, ground_cell=0):
     face_cells: (n_faces, 2) int  cellsOnFace; interior face has both >= 0, a
                 boundary face has the absent side = -1. Sign of d0 on face f is
                 +1 for face_cells[f,1], -1 for face_cells[f,0].
-    Returns grounded CSR (n_cells x n_cells).
+    ground_cell: int cell to ground (Dirichlet gauge), or None to return the raw
+                un-grounded d0ᵀ H d0 (the honest object for interior consistency
+                measures, which a boundary condition would contaminate).
+    Returns CSR (n_cells x n_cells), grounded unless ground_cell is None.
     """
     n_faces = face_cells.shape[0]
     # Signed incidence d0 (faces x cells): (d0 phi)_f = phi[hi] - phi[lo].
@@ -64,6 +67,8 @@ def assemble_dT_H_d(n_cells, faces, blocks, face_cells, ground_cell=0):
     H = sp.csr_matrix((hd, (hr, hc)), shape=(n_faces, n_faces))
     A = (d0.T @ H @ d0).tolil()
     A = 0.5 * (A + A.T)
+    if ground_cell is None:
+        return A.tocsr()
     diag_g = A[ground_cell, ground_cell]
     A[ground_cell, :] = 0.0; A[:, ground_cell] = 0.0
     A[ground_cell, ground_cell] = diag_g

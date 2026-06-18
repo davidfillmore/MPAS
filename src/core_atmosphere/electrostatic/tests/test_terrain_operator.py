@@ -198,5 +198,50 @@ class TerrainMMSOrderTests(unittest.TestCase):
         self.assertGreaterEqual(slope, 1.9)
 
 
+class MFDTerrainTests(unittest.TestCase):
+    """Bake-off: the MFD operator on the x-z terrain mesh."""
+
+    @unittest.expectedFailure  # BLOCKED 2026-06-18; see notes/2026-06-18-poisson-mfd-bakeoff.md
+    def test_mfd_flat_honesty_guard_is_second_order(self):
+        """FLAT HONESTY GUARD (BLOCKED): the A0 mimetic block (calibrated to the
+        HALF-cell offset C = fc-centroid, |C|=dx/2) composed with the plain-
+        difference d0 (phi_hi-phi_lo over the FULL cell distance dx) does NOT
+        reduce to the flat 5-point Laplacian: the shared-face coupling is over-
+        counted ~4x and T0's off-diagonals add a spurious distance-2 stencil.
+        Flat slope ~ -0.01 (errors stuck ~0.83). Threshold 1.9-2.1 is correct and
+        left intact; passing it requires a redesign of the A0 d0/Hodge scaling
+        contract (out of A1 scope -- do not guess). See the bake-off note."""
+        script = load_script()
+        slope = script.terrain_mms_order_mfd(hill_fraction=0.0, variant="mfd")
+        self.assertGreater(slope, 1.9)
+        self.assertLess(slope, 2.1)
+
+    def test_mfd_operator_is_spd_on_hill(self):
+        """Structural: each cell's mimetic block is SPD, so the grounded
+        A = d0ᵀ H d0 is symmetric + SPD. This holds even though the operator is
+        mis-scaled vs the Laplacian (the consistency defect is in the magnitude/
+        stencil, not in symmetry or definiteness)."""
+        script = load_script()
+        nx, nz = 24, 16
+        g = script.terrain_grid(nx, nz, hill_height=0.3, L=1.0, H=1.0)
+        A = script.mfd_terrain_operator(g, eps=1.0, variant="mfd")
+        self.assertEqual((abs(A - A.T) > 1e-9).nnz, 0)
+        from numpy.linalg import eigvalsh
+        self.assertGreater(eigvalsh(A.toarray()).min(), 0.0)
+
+    @unittest.expectedFailure  # NO-GO/BLOCKED 2026-06-18; see notes/2026-06-18-poisson-mfd-bakeoff.md
+    def test_mfd_terrain_is_second_order_on_hill(self):
+        """THE TERRAIN GATE (NO-GO/BLOCKED): with the A0 block + plain-difference
+        d0 as briefed, the MFD operator is not even consistent on the FLAT grid
+        (see the flat guard), so this hill gate cannot validate the slope physics.
+        Hill slope ~ -1.56 (errors DIVERGE 2.9->7.6->22.2 on refinement). Root
+        cause is the half-cell-vs-full-difference scaling mismatch at the A0/A1
+        interface, not the terrain geometry. Threshold >=1.9 left intact. Resolve
+        the A0 scaling contract first, then re-run. See the bake-off note."""
+        script = load_script()
+        slope = script.terrain_mms_order_mfd(hill_fraction=0.3, variant="mfd")
+        self.assertGreaterEqual(slope, 1.9)
+
+
 if __name__ == "__main__":
     unittest.main()

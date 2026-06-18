@@ -387,3 +387,168 @@ def terrain_mms_order(
     if return_details:
         return slope, list(grids), errs
     return slope
+
+
+# =============================================================================
+# MFD globally-consistent operator on the x-z terrain mesh (Task A1 bake-off)
+# =============================================================================
+#
+# The prior naive slope-corrected GᵀWG (above) is SPD but inconsistent on slopes
+# (MMS slope ~ -0.52): its explicit column-averaged cross-derivative term is the
+# defect.  The MFD route removes that term entirely.  The discrete gradient d0 is
+# the PLAIN coordinate-difference between cells; ALL the metric/slope coupling
+# lives in the per-cell mimetic Hodge block built from the cell's REAL physical
+# (x, z) corner geometry.  The operator is A = d0ᵀ H d0.
+#
+# Each cell (i, k) is a physical quad whose corners come from the interface
+# heights z_int (x at the interfaces i*dx and (i+1)*dx).  The slope therefore
+# enters geometrically — through the sloped-quad face normals/centroids fed to
+# mimetic_hodge_block — not through an explicit gradient cross-term.
+#
+# Global face numbering (matches the face lists handed to assemble_dT_H_d):
+#   x-faces: fx(i,k) = i*nz + k,              i=0..nx-1 (periodic), k=0..nz-1
+#   z-faces: fz(i,k) = nx*nz + i*(nz+1) + k,  i=0..nx-1, k=0..nz (incl. boundary)
+# The MMS phi = sin(kx*x)*sin(kz*z) with kz = pi/H is zero at BOTH z=0 and z=H, so
+# the ground (k=0) and top (k=nz) faces are consistently treated as Dirichlet-0
+# (single-sided d0 rows, face_cells = -1 on the absent side); periodic x-faces are
+# interior.  The gauge for the grounded operator comes from grounding one cell.
+
+import importlib.util as _ilu
+import pathlib as _pl
+
+_MFD = _pl.Path(__file__).resolve().parent / "mfd_operator.py"
+
+
+def _mfd_mod():
+    spec = _ilu.spec_from_file_location("mfd_operator", _MFD)
+    m = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def terrain_cell_geometry(grid):
+    """Physical-quad geometry per cell -> (faces, face_cells, geom_per_cell).
+
+    For each cell returns its 4 global face ids, the global cellsOnFace table,
+    and the per-cell ``(N, fc, centroid, vol)`` built from the PHYSICAL sloped-quad
+    corners — this is where the terrain slope enters, geometrically.
+
+    Global face numbering:
+        x-faces: fx(i,k) = i*nz + k,                 i=0..nx-1 (periodic), k=0..nz-1
+        z-faces: fz(i,k) = nx*nz + i*(nz+1) + k,     i=0..nx-1, k=0..nz (incl bndry)
+    """
+    nx, nz, dx = grid.x.size, grid.zeta.size, grid.dx
+    z_int = grid.z_int                       # (nx, nz+1) physical interface heights
+    n_xf = nx * nz
+    n_zf = nx * (nz + 1)
+    n_faces = n_xf + n_zf
+
+    def fx(i, k):
+        return (i % nx) * nz + k
+
+    def fz(i, k):
+        return n_xf + (i % nx) * (nz + 1) + k
+
+    def cell(i, k):
+        return (i % nx) * nz + k
+
+    # cellsOnFace (lo, hi); sign convention: +hi, -lo (matches d0 = phi_hi - phi_lo)
+    face_cells = np.full((n_faces, 2), -1, dtype=int)
+    for i in range(nx):
+        for k in range(nz):
+            face_cells[fx(i, k)] = (cell(i - 1, k), cell(i, k))   # left of (i,k)
+    for i in range(nx):
+        for k in range(nz + 1):
+            lo = cell(i, k - 1) if k > 0 else -1
+            hi = cell(i, k) if k < nz else -1
+            face_cells[fz(i, k)] = (lo, hi)
+
+    faces, geom = [], []
+    for i in range(nx):
+        for k in range(nz):
+            # physical corners of cell (i,k): x at interfaces i*dx, (i+1)*dx
+            xl, xr = i * dx, (i + 1) * dx
+            zbl, ztl = z_int[i, k], z_int[i, k + 1]                 # left column
+            zbr, ztr = z_int[(i + 1) % nx, k], z_int[(i + 1) % nx, k + 1]
+            corners = np.array([[xl, zbl], [xr, zbr], [xr, ztr], [xl, ztl]])
+            centroid = corners.mean(0)
+            vol = 0.5 * abs(
+                (xr - xl) * (ztl + ztr - zbl - zbr)
+            )  # trapezoid area = dx * mean(thickness)
+            # face order: left, right, bottom, top  (must match `faces` list below)
+            edges = [(3, 0), (1, 2), (0, 1), (2, 3)]   # left,right,bottom,top corners
+            N, fc = [], []
+            for a, b in edges:
+                e = corners[b] - corners[a]
+                outw = np.array([e[1], -e[0]])
+                mid = 0.5 * (corners[a] + corners[b])
+                if np.dot(outw, mid - centroid) < 0:
+                    outw = -outw
+                N.append(outw)
+                fc.append(mid)
+            faces.append([fx(i, k), fx(i + 1, k), fz(i, k), fz(i, k + 1)])
+            geom.append((np.array(N), np.array(fc), centroid, vol))
+    return faces, face_cells, geom
+
+
+def _terrain_mfd_blocks(grid, eps):
+    """Shared builder: (n_cells, faces, face_cells, mimetic blocks) for the MFD path.
+
+    Single source of the per-cell geometry + Hodge blocks so the grounded operator
+    and the un-grounded residual measure both feed the same numbers into
+    ``mfd_operator.assemble_dT_H_d`` (no duplicated assembly).
+    """
+    mfd = _mfd_mod()
+    n_cells = grid.x.size * grid.zeta.size
+    faces, face_cells, geom = terrain_cell_geometry(grid)
+    blocks = [mfd.mimetic_hodge_block(N, fc, c, vol, eps) for (N, fc, c, vol) in geom]
+    return mfd, n_cells, faces, face_cells, blocks
+
+
+def mfd_terrain_operator(grid, eps, variant="mfd", ground_cell=0):
+    """Grounded globally-consistent terrain operator A = d0ᵀ H d0."""
+    if variant != "mfd":
+        raise ValueError(f"terrain mesh supports variant 'mfd', got {variant!r}")
+    mfd, n_cells, faces, face_cells, blocks = _terrain_mfd_blocks(grid, eps)
+    return mfd.assemble_dT_H_d(n_cells, faces, blocks, face_cells, ground_cell)
+
+
+def _mms_residual_relative_l2_mfd(grid, eps, kx, kz, variant):
+    """Operator-only MMS residual (interior, relative L2) for the MFD operator.
+
+    Same measure as ``_mms_residual_relative_l2``: the RAW (un-grounded) operator
+    against the consistent FV right-hand side eps*(kx^2+kz^2)*phi*V_cell, over
+    interior cells only.  The un-grounded ``A = d0ᵀ H d0`` is assembled by
+    ``mfd_operator.assemble_dT_H_d`` with ``ground_cell=None`` (grounding would
+    inject an O(1) defect at the gauge cell's neighbour and contaminate the order).
+    """
+    if variant != "mfd":
+        raise ValueError(f"terrain mesh supports variant 'mfd', got {variant!r}")
+    nx, nz = grid.x.size, grid.zeta.size
+    mfd, n_cells, faces, face_cells, blocks = _terrain_mfd_blocks(grid, eps)
+    A = mfd.assemble_dT_H_d(n_cells, faces, blocks, face_cells, ground_cell=None)
+
+    phi = np.sin(kx * grid.x)[:, np.newaxis] * np.sin(kz * grid.z)
+    V_cell = grid.dx * grid.dz
+    b = eps * (kx ** 2 + kz ** 2) * phi * V_cell
+    r = A @ phi.reshape(-1) - b.reshape(-1)
+    mask = np.zeros((nx, nz), dtype=bool)
+    mask[:, 1:nz - 1] = True
+    mask = mask.reshape(-1)
+    return np.linalg.norm(r[mask]) / np.linalg.norm(b.reshape(-1)[mask])
+
+
+def terrain_mms_order_mfd(hill_fraction, variant="mfd",
+                          grids=((32, 24), (64, 48), (128, 96)),
+                          L=1.0, H=1.0, eps=1.0, return_details=False):
+    """Finest-two MMS slope of the MFD terrain operator (mirrors terrain_mms_order)."""
+    hill_height = hill_fraction * H
+    kx, kz = 2.0 * math.pi / L, math.pi / H
+    errs = []
+    for nx, nz in grids:
+        g = terrain_grid(nx, nz, hill_height, L, H)
+        errs.append(_mms_residual_relative_l2_mfd(g, eps, kx, kz, variant))
+    slope = math.log(errs[-2] / errs[-1]) / math.log(grids[-1][0] / grids[-2][0])
+    if return_details:
+        return slope, list(grids), errs
+    return slope
