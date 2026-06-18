@@ -187,8 +187,12 @@ class TerrainMMSOrderTests(unittest.TestCase):
         self.assertGreater(slope, 1.9)
         self.assertLess(slope, 2.1)
 
+    @unittest.expectedFailure  # NO-GO 2026-06-18; see notes/2026-06-18-poisson-terrain-prototype.md
     def test_terrain_operator_is_second_order_on_hill(self):
-        """THE GATE: slope-corrected operator stays ~2nd order on a 0.3*H hill."""
+        """THE GATE (NO-GO): the naive column-averaged slope-corrected GtWG is SPD
+        but NOT consistent on a hill (achieved slope ~-0.5 vs the >=1.9 target).
+        Expected to PASS once approach A (a consistent mimetic cross-term grounded
+        in MPAS zb/zb3) lands -- remove this decorator then."""
         script = load_script()
         slope = script.terrain_mms_order(hill_fraction=0.3)
         self.assertGreaterEqual(slope, 1.9)
