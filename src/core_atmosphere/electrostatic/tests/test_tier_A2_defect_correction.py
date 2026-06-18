@@ -161,6 +161,30 @@ class DefectCorrectionPrototypeTests(unittest.TestCase):
 
         self.assertAlmostEqual(laplacian, 6.0, places=12)
 
+    def test_whitney_hodge_block_is_spd(self):
+        script = load_script()
+
+        geom = script.regular_hex_patch()
+        H = script.whitney_hodge_block(
+            geom.cell_xyz, geom.edge_list, geom.vertices_xyz
+        )
+        self.assertTrue(np.allclose(H, H.T, atol=1e-12))
+        self.assertTrue(np.all(np.linalg.eigvalsh(H) > 0.0))
+
+    def test_whitney_hodge_reduces_to_diagonal_on_regular_hex(self):
+        script = load_script()
+
+        geom = script.regular_hex_patch()
+        H = script.whitney_hodge_block(
+            geom.cell_xyz, geom.edge_list, geom.vertices_xyz
+        )
+        lumped = np.diag(geom.edge_len / geom.edge_dc)
+        self.assertLess(
+            np.max(np.abs(H - np.diag(np.diag(H)))),
+            1e-2 * np.max(np.diag(H)),
+        )
+        self.assertTrue(np.allclose(np.diag(H), np.diag(lumped), rtol=0.05))
+
     def test_neighbor_cells_within_rings_expands_from_center_cell(self):
         script = load_script()
 

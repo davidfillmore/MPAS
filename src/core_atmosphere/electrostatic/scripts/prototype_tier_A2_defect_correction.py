@@ -359,6 +359,179 @@ def apply_local_lsq_laplacian(mesh, phi, correction_cells, stencil_rings=1):
     return laplacian
 
 
+def _triangle_plane_coords(triangle_xyz):
+    """Return planar (3, 2) coordinates for a triangle's vertices in its own plane."""
+    triangle_xyz = np.asarray(triangle_xyz, dtype=float)
+    edge_a = triangle_xyz[1] - triangle_xyz[0]
+    edge_b = triangle_xyz[2] - triangle_xyz[0]
+    basis_u = edge_a / np.linalg.norm(edge_a)
+    perp = edge_b - np.dot(edge_b, basis_u) * basis_u
+    basis_v = perp / np.linalg.norm(perp)
+    return np.array(
+        [
+            [0.0, 0.0],
+            [np.dot(edge_a, basis_u), 0.0],
+            [np.dot(edge_b, basis_u), np.dot(edge_b, basis_v)],
+        ]
+    )
+
+
+def whitney_triangle_mass(triangle_xyz):
+    """Return the 3x3 lowest-order Whitney 1-form mass for one triangle.
+
+    Rows/columns follow the local edge order [(0, 1), (1, 2), (0, 2)]. The edge
+    element for local edge (i, j) is w = lambda_i grad(lambda_j) -
+    lambda_j grad(lambda_i); the entries are the closed-form integrals
+    ``M[e, e'] = integral_T w_e . w_e'`` using ``integral lambda_p lambda_q =
+    area (1 + delta_pq) / 12`` and constant barycentric gradients.
+    """
+    plane_xy = _triangle_plane_coords(triangle_xyz)
+    vandermonde = np.column_stack((np.ones(3), plane_xy[:, 0], plane_xy[:, 1]))
+    inverse = np.linalg.inv(vandermonde)
+    gradients = [np.array([inverse[1, i], inverse[2, i]]) for i in range(3)]
+    area = 0.5 * abs(
+        (plane_xy[1, 0] - plane_xy[0, 0]) * (plane_xy[2, 1] - plane_xy[0, 1])
+        - (plane_xy[2, 0] - plane_xy[0, 0]) * (plane_xy[1, 1] - plane_xy[0, 1])
+    )
+
+    local_pairs = [(0, 1), (1, 2), (0, 2)]
+
+    def product_integral(p, q):
+        return area / 12.0 * (1.0 + (1.0 if p == q else 0.0))
+
+    mass = np.zeros((3, 3))
+    for row, (i_a, j_a) in enumerate(local_pairs):
+        for column, (i_b, j_b) in enumerate(local_pairs):
+            mass[row, column] = (
+                product_integral(i_a, i_b) * np.dot(gradients[j_a], gradients[j_b])
+                - product_integral(i_a, j_b) * np.dot(gradients[j_a], gradients[i_b])
+                - product_integral(j_a, i_b) * np.dot(gradients[i_a], gradients[j_b])
+                + product_integral(j_a, j_b) * np.dot(gradients[i_a], gradients[i_b])
+            )
+    return mass, local_pairs
+
+
+def _reconstruct_local_triangles(cell_xyz, vertices_xyz):
+    """Return (triangle cell triples, generating vertex index) for a neighborhood.
+
+    Each dual vertex (Voronoi corner) is the circumcenter of one Delaunay
+    triangle, so its three nearest cell centers recover that triangle.
+    """
+    triangles = []
+    for vertex_index, vertex_xyz in enumerate(vertices_xyz):
+        distances = np.linalg.norm(cell_xyz - vertex_xyz, axis=1)
+        triple = tuple(sorted(int(c) for c in np.argsort(distances)[:3]))
+        triangles.append((triple, vertex_index))
+    return triangles
+
+
+def whitney_hodge_block(cell_xyz, edge_list, vertices_xyz):
+    """Return the un-lumped (Whitney 1-form) Hodge block for a local edge set.
+
+    ``cell_xyz`` holds the cell-center (primal vertex) coordinates, ``edge_list``
+    holds the primal edges as ``(cell_a, cell_b)`` index pairs, and
+    ``vertices_xyz`` holds the dual (Voronoi) corner coordinates. The block is
+    the lowest-order Whitney edge-mass matrix on the local Delaunay
+    triangulation, symmetrically calibrated so its diagonal reproduces the
+    DEC-consistent Hodge ``l_e / d_e`` (the discrete Whitney edge-mass diagonal
+    is a fixed constant times ``l_e / d_e`` in the regular limit; the
+    calibration removes that constant while preserving the off-diagonal Whitney
+    coupling that distinguishes irregular neighborhoods). The result is
+    symmetric, SPD by construction, and reduces to the diagonal lumped Hodge
+    when the local edges decouple (the regular-hexagon limit).
+    """
+    cell_xyz = np.asarray(cell_xyz, dtype=float)
+    vertices_xyz = np.asarray(vertices_xyz, dtype=float)
+    edge_list = np.asarray(edge_list, dtype=int)
+    n_edge = edge_list.shape[0]
+
+    edge_index = {}
+    for column, (cell_a, cell_b) in enumerate(edge_list):
+        edge_index[(min(int(cell_a), int(cell_b)), max(int(cell_a), int(cell_b)))] = column
+
+    triangles = _reconstruct_local_triangles(cell_xyz, vertices_xyz)
+    mass = np.zeros((n_edge, n_edge))
+    incident_vertices = {column: [] for column in range(n_edge)}
+
+    for triple, vertex_index in triangles:
+        local_mass, local_pairs = whitney_triangle_mass(cell_xyz[list(triple)])
+        local_columns = []
+        for (local_i, local_j) in local_pairs:
+            cell_a, cell_b = triple[local_i], triple[local_j]
+            local_columns.append(
+                edge_index.get((min(cell_a, cell_b), max(cell_a, cell_b)))
+            )
+        for row in range(3):
+            if local_columns[row] is None:
+                continue
+            incident_vertices[local_columns[row]].append(vertex_index)
+            for column in range(3):
+                if local_columns[column] is None:
+                    continue
+                mass[local_columns[row], local_columns[column]] += local_mass[row, column]
+
+    scale = np.ones(n_edge)
+    for column, (cell_a, cell_b) in enumerate(edge_list):
+        dual_distance = float(np.linalg.norm(cell_xyz[cell_a] - cell_xyz[cell_b]))
+        flanking = list(dict.fromkeys(incident_vertices[column]))
+        if len(flanking) >= 2:
+            primal_length = float(
+                np.linalg.norm(vertices_xyz[flanking[0]] - vertices_xyz[flanking[1]])
+            )
+        elif len(flanking) == 1:
+            primal_length = dual_distance / math.sqrt(3.0)
+        else:
+            primal_length = dual_distance
+        target = primal_length / dual_distance if dual_distance > 0.0 else 0.0
+        if mass[column, column] > 0.0 and target > 0.0:
+            scale[column] = math.sqrt(target / mass[column, column])
+
+    hodge = (scale[:, None] * mass) * scale[None, :]
+    hodge = 0.5 * (hodge + hodge.T)
+    return hodge
+
+
+def regular_hex_patch():
+    """Return a synthetic regular-hexagon edge neighborhood for Whitney tests.
+
+    The patch is a set of congruent equilateral diamonds (two equilateral
+    triangles sharing a primal edge), one per listed edge, placed far enough
+    apart that the listed edges decouple - the regular-hexagon limit in which
+    the Whitney Hodge reduces to the diagonal lumped Hodge. Exposes
+    ``cell_xyz``, ``edge_list``, ``vertices_xyz``, ``edge_len`` (dual/Voronoi
+    edge length l_e) and ``edge_dc`` (primal edge length d_e).
+    """
+    apex_height = math.sqrt(3.0) / 2.0
+    circumcenter_offset = math.sqrt(3.0) / 6.0
+
+    cells = []
+    edges = []
+    vertices = []
+    edge_len = []
+    edge_dc = []
+    for diamond in range(6):
+        origin = 10.0 * diamond
+        cell_a = len(cells)
+        cells.append([origin - 0.5, 0.0, 0.0])
+        cell_b = len(cells)
+        cells.append([origin + 0.5, 0.0, 0.0])
+        cells.append([origin, apex_height, 0.0])
+        cells.append([origin, -apex_height, 0.0])
+        vertices.append([origin, circumcenter_offset, 0.0])
+        vertices.append([origin, -circumcenter_offset, 0.0])
+        edges.append([cell_a, cell_b])
+        edge_dc.append(1.0)
+        edge_len.append(2.0 * circumcenter_offset)
+
+    return SimpleNamespace(
+        cell_xyz=np.asarray(cells, dtype=float),
+        edge_list=np.asarray(edges, dtype=int),
+        vertices_xyz=np.asarray(vertices, dtype=float),
+        edge_len=np.asarray(edge_len, dtype=float),
+        edge_dc=np.asarray(edge_dc, dtype=float),
+    )
+
+
 def infer_sphere_radius(grid_dataset, init_dataset):
     """Infer the physical sphere radius from mesh/init metadata."""
     for dataset in (init_dataset, grid_dataset):
