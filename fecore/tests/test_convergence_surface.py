@@ -27,7 +27,15 @@ from fecore.verify import convergence
 # ---------------------------------------------------------------------------
 
 def test_icosa_p2_is_second_order():
-    """P2 FEM on icosa unit-sphere meshes must achieve slope >= 1.9."""
+    """P2 FEM on icosa unit-sphere meshes must achieve slope >= 1.9.
+
+    The threshold is >=1.9 (not ~3.0) because the mesh geometry is degree-1
+    (affine/flat triangles approximating the sphere).  The O(h²) geometric
+    approximation error of piecewise-flat triangles caps the L² convergence of
+    any element degree at 2nd order — the classical isoparametric geometry cap.
+    P2 therefore achieves ~2.0, not its native O(h³).  See convergence.py's
+    module docstring for full discussion (Dziuk 1988; Bernardi 1989).
+    """
     s = convergence.surface_convergence("icosa", degree=2, rhs_mode="consistent")["slope"]
     assert s >= 1.9, f"icosa P2 slope {s:.4f} < 1.9"
 

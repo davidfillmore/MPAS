@@ -11,7 +11,9 @@ surface_convergence(family, degree, rhs_mode) -> dict
     ``slope`` is the log-log rate from the two finest levels.
 
 surface_matrix() -> list[dict]
-    Run all six configurations (family × {P1-lumped, P1-consistent, P2-consistent}).
+    Run the configurations for all available families
+    (family × {P1-lumped, P1-consistent, P2-consistent}).  The icosa triple
+    always runs; the SCVT triple is added only when the mesh bundle is present.
     Each dict has keys: family, degree, rhs_mode, h, err, slope.
 
 Mesh families
@@ -33,6 +35,28 @@ MMS
 source_fn = mms.surface_source  (eps * 20/R^2 * Y_4^2)
 exact_fn  = mms.y42_cart
 eps = 1.0 (cancels in relative L2)
+
+Isoparametric geometry cap (why P2 shows ~2nd order, not ~3rd order)
+---------------------------------------------------------------------
+Both mesh families use degree-1 geometry: triangles built by
+``basix.ufl.element("Lagrange", "triangle", 1, ...)`` — flat affine triangles
+that approximate the sphere by piecewise-planar facets.  The geometric
+approximation error of a degree-1 surface mesh of the unit sphere is O(h²)
+(the distance from a curved surface patch to its linear approximant scales as
+the square of the element diameter).  This geometric error propagates into the
+assembled weak form and caps the L² solution error at O(h²) for *any* element
+degree, regardless of how well the basis functions interpolate smooth functions
+on the exact geometry.
+
+Consequently, P2 elements achieve slope ≈ 2.0 rather than their native O(h³):
+the flat-triangle geometry error dominates and prevents the higher-order
+polynomial from improving accuracy beyond 2nd order.  This is the classical
+*isoparametric geometry cap* of surface FEM and is well-established in the
+analysis of evolving-surface and stationary-surface PDEs (Dziuk 1988; Bernardi
+1989).  Realizing P2's native 3rd-order convergence on the sphere would require
+isoparametric (degree-2) geometry in which edge-midpoint nodes are snapped to
+the true spherical surface — a future enhancement beyond the current Task 6
+scope.
 """
 
 import os
@@ -99,9 +123,11 @@ def surface_convergence(family: str, degree: int, rhs_mode: str) -> dict:
 
 
 def surface_matrix() -> list:
-    """Run all six (family × config) combinations.
+    """Run all available (family × config) combinations.
 
-    Configs: family ∈ {"icosa","scvt"} × {(1,"lumped"),(1,"consistent"),(2,"consistent")}.
+    Always runs the 3 icosa configs; adds the 3 SCVT configs only when the
+    SCVT mesh bundle is present on disk.
+    Configs per family: {(1,"lumped"), (1,"consistent"), (2,"consistent")}.
 
     Returns
     -------
@@ -202,6 +228,8 @@ def _scvt_convergence(degree: int, rhs_mode: str) -> dict:
                 source_fn=mms.surface_source, exact_fn=mms.y42_cart, eps=1.0,
             )
         except (MemoryError, RuntimeError) as exc:
+            # Note: PETSc OOM failures may surface as other exception types
+            # (e.g. PETSc.Error) not listed here; behavior is unchanged if so.
             if km == 60 and degree == 2:
                 log.warning(
                     "SCVT 60 km P2 solve failed (%s). "
@@ -214,7 +242,7 @@ def _scvt_convergence(degree: int, rhs_mode: str) -> dict:
 
         h_list.append(float(km))
         err_list.append(err)
-        log.debug("  scvt %d km P%d %s h=%g err=%.4g",
+        log.debug("  scvt %d km P%d %s h_proxy=%g err=%.4g",
                   km, degree, rhs_mode, km, err)
 
     if p2_large_skipped:
