@@ -30,6 +30,11 @@ def sphere_radius(grid_nc_path: str | object) -> float:
     meshes (radius ~ 1.0) use a dimensionless convention; in that case
     we return the standard Earth radius 6 371 229 m so that coordinates
     are scaled to physical metres before mesh creation.
+
+    Assumption: a stored ``sphere_radius`` ≤ 1000 is treated as a
+    unit-sphere convention and replaced with Earth radius (6 371 229 m).
+    A genuine sub-kilometre physical mesh would be misread, but this is
+    not a concern for MPAS atmospheric grids.
     """
     with nc.Dataset(grid_nc_path) as ds:
         v = getattr(ds, "sphere_radius", None)
