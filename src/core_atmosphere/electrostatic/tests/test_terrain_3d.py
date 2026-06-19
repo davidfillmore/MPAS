@@ -20,3 +20,23 @@ class TerrainMesh3DTests(unittest.TestCase):
         dz = np.diff(g.zcol, axis=1)
         self.assertGreater(float(dz.std()), 0.0)   # terrain: thickness varies
         self.assertGreater(float(dz.min()), 0.0)   # Jacobian stays positive
+
+
+class TerrainOperator3DTests(unittest.TestCase):
+    def test_operator_spd_on_hill(self):
+        m = load(); g = m.terrain_mesh_3d(8, 8, hill_fraction=0.3)
+        A = m.terrain_operator(g, ground_cell=0)
+        self.assertEqual((abs(A - A.T) > 1e-9).nnz, 0)
+        self.assertGreater(m.spd_min_eig_of(A), 0.0)
+
+    def test_ungrounded_annihilates_constants(self):
+        m = load(); g = m.terrain_mesh_3d(8, 8, hill_fraction=0.3)
+        A = m.terrain_operator_ungrounded(g)
+        r = A @ np.ones(A.shape[0])
+        self.assertLess(float(np.max(np.abs(r))), 1e-9)
+
+    def test_halo_width_is_reported(self):
+        m = load(); g = m.terrain_mesh_3d(8, 8, hill_fraction=0.3)
+        rings = m.halo_rings(g)
+        self.assertGreaterEqual(rings, 1)      # records the actual coupling reach
+        print(f"\n[terrain] measured halo rings = {rings}")
