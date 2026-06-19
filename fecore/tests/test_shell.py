@@ -28,6 +28,7 @@ import pathlib
 
 import numpy as np
 import pytest
+import ufl
 
 from fecore.mesh import icosa, scvt_dual
 from fecore.operator.poisson import solve_shell
@@ -390,6 +391,80 @@ def test_shell_ground_dirichlet_enforced():
     assert max_val < 1e-12, (
         f"Ground Dirichlet not enforced: max |uh| on inner surface = {max_val:.3e}"
     )
+
+
+def test_shell_stiffness_matrix_is_spd():
+    """Shell stiffness matrix assembled with ground Dirichlet BC is SPD.
+
+    Assembles A = eps * integral(grad(u).grad(v) dx) with the ground-Dirichlet
+    BC (phi=0 on r≈R) on a small icosa shell mesh.  The Dirichlet BC removes the
+    null space, making A SPD.  We verify two cheap necessary conditions:
+
+    1. Positive diagonal: every diagonal entry > 0 (necessary for SPD; a direct
+       check without a full eigendecomposition; CG convergence in the solve tests
+       already implies SPD empirically).
+    2. Symmetry: norm(A - A^T, Frobenius) / norm(A, Frobenius) ≈ 0 (FEM
+       assembly is symmetric by construction; this catches implementation errors
+       such as unsymmetric BC application).  Computed via CSR data from PETSc.
+    """
+    import dolfinx.fem
+    import dolfinx.fem.petsc
+    import petsc4py.PETSc as PETSc
+
+    R, H = 1.0, 0.25
+    eps = 1.0
+    msh = icosa.icosa_shell_mesh(refine=2, n_layers=2, H=H)
+    V = dolfinx.fem.functionspace(msh, ("Lagrange", 1))
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+
+    # Ground Dirichlet BC (same as solve_shell).
+    import dolfinx.mesh as dmesh
+    tol = 0.05 * R
+    inner_facets = dmesh.locate_entities_boundary(
+        msh, msh.topology.dim - 1,
+        lambda x: np.linalg.norm(x, axis=0) < R + tol,
+    )
+    inner_dofs = dolfinx.fem.locate_dofs_topological(
+        V, msh.topology.dim - 1, inner_facets
+    )
+    bc = dolfinx.fem.dirichletbc(np.float64(0.0), inner_dofs, V)
+
+    a_ufl = eps * ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    a_form = dolfinx.fem.form(a_ufl)
+    A = dolfinx.fem.petsc.assemble_matrix(a_form, bcs=[bc])
+    A.assemble()
+
+    # 1. Positive diagonal check via PETSc diagonal vector.
+    diag_vec = A.createVecRight()
+    A.getDiagonal(diag_vec)
+    diag = diag_vec.getArray().copy()
+    diag_vec.destroy()
+    n_nonpos = int(np.sum(diag <= 0))
+    assert n_nonpos == 0, (
+        f"{n_nonpos}/{len(diag)} diagonal entries are non-positive "
+        f"(min diagonal = {diag.min():.3e}). "
+        "Stiffness matrix with ground Dirichlet BC must have positive diagonal."
+    )
+
+    # 2. Symmetry check: extract CSR data and compute Frobenius norm of A - A^T.
+    # PETSc getValuesCSR returns (row_ptr, col_indices, values) on the local rows.
+    ai, aj, av = A.getValuesCSR()
+    n = A.getSize()[0]
+    # Build a dense array only for this small (refine=2, n_layers=2) mesh — n ≈ 200.
+    A_dense = np.zeros((n, n), dtype=np.float64)
+    for i in range(n):
+        cols = aj[ai[i]:ai[i + 1]]
+        vals = av[ai[i]:ai[i + 1]]
+        A_dense[i, cols] = vals
+    frob_diff = np.linalg.norm(A_dense - A_dense.T, "fro")
+    frob_A = np.linalg.norm(A_dense, "fro")
+    rel_asymmetry = frob_diff / frob_A if frob_A > 0 else frob_diff
+    assert rel_asymmetry < 1e-12, (
+        f"Stiffness matrix is not symmetric: "
+        f"norm(A-A^T,'fro')/norm(A,'fro') = {rel_asymmetry:.3e}"
+    )
+
+    A.destroy()
 
 
 def test_icosa_shell_p2_is_second_order():

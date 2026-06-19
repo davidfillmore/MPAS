@@ -446,8 +446,7 @@ def _scvt_shell_mesh_normalized(path, n_layers: int, H_norm: float):
 
     # Scale surface vertices to unit sphere (R_norm = 1.0).
     surf_pts = np.column_stack((xc, yc, zc)).astype(np.float64)
-    surf_pts *= R_phys / np.linalg.norm(surf_pts, axis=1)[:, None]
-    surf_pts /= R_phys  # now on unit sphere
+    surf_pts /= np.linalg.norm(surf_pts, axis=1)[:, None]  # unit-normalize
 
     surf_tris = cov[np.all(cov >= 0, axis=1)].copy()
     _orient_outward(surf_tris, surf_pts)

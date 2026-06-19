@@ -258,14 +258,20 @@ def solve_shell(mesh, R, H, degree, rhs_mode, source_fn, exact_fn, eps=1.0):
     return uh, l2_rel
 
 
-def _solve_shell_lumped(mesh, V, u, v, a_ufl, src, bc, eps):
-    """Solve the shell system with lumped-mass RHS at the PETSc level.
+def _assemble_and_solve_lumped(mesh, V, u, v, a_ufl, src, bc, context_note):
+    """Shared lumped-mass solve kernel used by both surface and shell paths.
 
     1. Assemble stiffness A = eps * integral( grad(u).grad(v) dx ), apply BC.
     2. Assemble consistent mass M = integral( u*v dx ).
     3. Compute lumped mass mL = M * 1  (row sums).
     4. Build load b_i = mL_i * rho_i  (nodal source).
     5. Apply lifting and BC to b; CG-solve A uh = b.
+
+    Parameters
+    ----------
+    context_note : str
+        Appended to the RuntimeError message when KSP fails to converge,
+        so callers can distinguish the surface path from the shell path.
     """
     a_form = dolfinx.fem.form(a_ufl)
 
@@ -273,7 +279,7 @@ def _solve_shell_lumped(mesh, V, u, v, a_ufl, src, bc, eps):
     A = dolfinx.fem.petsc.assemble_matrix(a_form, bcs=[bc])
     A.assemble()
 
-    # Consistent mass (no BCs — we need the full lumped volumes)
+    # Consistent mass (no BCs — we need the full lumped node volumes/areas)
     m_form = dolfinx.fem.form(u * v * ufl.dx)
     M = dolfinx.fem.petsc.assemble_matrix(m_form)
     M.assemble()
@@ -312,8 +318,7 @@ def _solve_shell_lumped(mesh, V, u, v, a_ufl, src, bc, eps):
     if not ksp.is_converged:
         reason = ksp.getConvergedReason()
         raise RuntimeError(
-            f"KSP did not converge: reason={reason}. "
-            "Check that the system is well-posed (inner Dirichlet applied)."
+            f"KSP did not converge: reason={reason}. {context_note}"
         )
 
     uh = dolfinx.fem.Function(V)
@@ -330,77 +335,19 @@ def _solve_shell_lumped(mesh, V, u, v, a_ufl, src, bc, eps):
     mL_vec.destroy()
 
     return uh
+
+
+def _solve_shell_lumped(mesh, V, u, v, a_ufl, src, bc, eps):
+    """Solve the shell system with lumped-mass RHS (delegates to shared kernel)."""
+    return _assemble_and_solve_lumped(
+        mesh, V, u, v, a_ufl, src, bc,
+        context_note="Check that the system is well-posed (inner Dirichlet applied).",
+    )
 
 
 def _solve_lumped(mesh, V, u, v, a_ufl, src, bc, eps):
-    """Solve with lumped-mass RHS at the PETSc matrix/vector level.
-
-    1. Assemble stiffness A = eps * integral( grad(u).grad(v) dx ), apply BC.
-    2. Assemble consistent mass M = integral( u*v dx ).
-    3. Compute lumped mass mL = M * 1  (row sums).
-    4. Build load b_i = mL_i * rho_i  (nodal source).
-    5. Apply lifting and BC to b; CG-solve A uh = b.
-    """
-    a_form = dolfinx.fem.form(a_ufl)
-
-    # Stiffness with BC diagonal
-    A = dolfinx.fem.petsc.assemble_matrix(a_form, bcs=[bc])
-    A.assemble()
-
-    # Consistent mass (no BCs — we need the full lumped areas)
-    m_form = dolfinx.fem.form(u * v * ufl.dx)
-    M = dolfinx.fem.petsc.assemble_matrix(m_form)
-    M.assemble()
-
-    # Lumped mass: row sums of M
-    ones = M.createVecRight()
-    ones.set(1.0)
-    mL_vec = M.createVecRight()
-    M.mult(ones, mL_vec)
-    mL = mL_vec.getArray().copy()
-
-    # Load vector b_i = mL_i * rho_i
-    rho_nodal = src.x.array.copy()
-    b_arr = mL * rho_nodal
-
-    b = M.createVecRight()
-    b.setArray(b_arr)
-    b.assemble()
-
-    # Apply BC: lifting then set
-    dolfinx.fem.petsc.apply_lifting(b, [a_form], bcs=[[bc]])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.petsc.set_bc(b, [bc])
-
-    # KSP solve
-    ksp = PETSc.KSP().create(mesh.comm)
-    ksp.setOperators(A)
-    ksp.setType("cg")
-    ksp.getPC().setType("hypre")
-    ksp.setFromOptions()
-    ksp.setUp()
-
-    x_vec = A.createVecRight()
-    ksp.solve(b, x_vec)
-
-    if not ksp.is_converged:
-        reason = ksp.getConvergedReason()
-        raise RuntimeError(
-            f"KSP did not converge: reason={reason}. "
-            "Check that the system is well-posed (single DOF pinned)."
-        )
-
-    uh = dolfinx.fem.Function(V)
-    uh.x.array[:] = x_vec.getArray()
-    uh.x.scatter_forward()
-
-    # Cleanup PETSc objects
-    ksp.destroy()
-    A.destroy()
-    M.destroy()
-    b.destroy()
-    x_vec.destroy()
-    ones.destroy()
-    mL_vec.destroy()
-
-    return uh
+    """Solve with lumped-mass RHS (delegates to shared kernel)."""
+    return _assemble_and_solve_lumped(
+        mesh, V, u, v, a_ufl, src, bc,
+        context_note="Check that the system is well-posed (single DOF pinned).",
+    )
