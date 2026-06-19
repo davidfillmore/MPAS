@@ -2,6 +2,7 @@
 """Unit tests for the Tier A.2 defect-correction prototype helpers."""
 
 import importlib.util
+import math
 import pathlib
 import unittest
 
@@ -342,6 +343,37 @@ class DefectCorrectionPrototypeTests(unittest.TestCase):
 
         np.testing.assert_array_equal(ring_one, np.array([0, 2]))
         np.testing.assert_array_equal(ring_two, np.array([0, 2, 3]))
+
+
+class ConvergenceY42SolutionErrorTests(unittest.TestCase):
+    @unittest.skipUnless(
+        (SCVT_MESH_ROOT / "480km" / "grid.nc").exists(),
+        "480km SCVT mesh bundle not available",
+    )
+    def test_convergence_Y42_solution_error_cotangent_slope_is_positive(self):
+        """Solution-error slope for the cotangent sphere operator is finite and positive.
+        Diagnostic — does NOT gate on >= 1.9. Records the actual slope."""
+        script = load_script()
+        result = script.convergence_Y42_solution_error(
+            meshes=["480km", "240km", "120km", "60km"], variant="cotangent"
+        )
+        slope = result["l2_slope"]
+        self.assertTrue(math.isfinite(slope), f"cotangent solution-error slope is NaN/inf: {slope}")
+        self.assertGreater(slope, 0.0, f"cotangent solution-error slope non-positive: {slope}")
+
+    @unittest.skipUnless(
+        (SCVT_MESH_ROOT / "480km" / "grid.nc").exists(),
+        "480km SCVT mesh bundle not available",
+    )
+    def test_convergence_Y42_solution_error_baseline_slope_is_positive(self):
+        """Solution-error slope for the baseline sphere operator is finite and positive."""
+        script = load_script()
+        result = script.convergence_Y42_solution_error(
+            meshes=["480km", "240km", "120km", "60km"], variant="baseline"
+        )
+        slope = result["l2_slope"]
+        self.assertTrue(math.isfinite(slope), f"baseline solution-error slope is NaN/inf: {slope}")
+        self.assertGreater(slope, 0.0, f"baseline solution-error slope non-positive: {slope}")
 
 
 if __name__ == "__main__":

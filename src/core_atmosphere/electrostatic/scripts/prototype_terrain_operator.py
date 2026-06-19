@@ -675,3 +675,124 @@ def terrain_mms_order_mfd(hill_fraction, variant="mfd",
     if return_details:
         return slope, list(grids), errs
     return slope
+
+
+# =============================================================================
+# Solution-error MMS gate (Phase B / solution accuracy)
+# =============================================================================
+#
+# Unlike the operator-only residual (A @ phi_exact - b), the solution-error
+# metric SOLVES A phi = b and compares phi to phi_exact.  The Galerkin/FEM
+# operator-residual (||A phi_e - b|| / ||b||) underreads the convergence order
+# for consistent operators; the solution error is the correct measure for
+# Galerkin methods such as the Whitney/P1 operator.
+
+
+def terrain_solution_error_order(
+    hill_fraction,
+    variant="whitney",
+    grids=((32, 24), (64, 48), (128, 96)),
+    L=1.0,
+    H=1.0,
+    eps=1.0,
+    return_details=False,
+):
+    """Finest-two-mesh solution-error convergence slope for the terrain MMS problem.
+
+    MMS: phi_exact = sin(kx*x)*sin(kz*z), kx=2*pi/L, kz=pi/H.
+    Source: f = eps*(kx^2+kz^2)*phi_exact.
+    RHS: b_i = f_i * V_cell_i  (volume-weighted, V_cell = dx*dz_physical).
+
+    Solves the system with Dirichlet BCs on the top (k=nz-1) and bottom (k=0)
+    cell rows (using the MMS exact values), which matches the physical problem
+    setup: the z-boundary cells are pinned, only interior cells are solved.  The
+    ungrounded operator is assembled and reduced explicitly to the interior (plus
+    one gauge pin at cell (0, 1) to remove the null space if nz > 2).
+
+    Solution error is measured over the interior cells only (k=1..nz-2) with
+    V-weighted relative L2 norm.
+
+    Parameters
+    ----------
+    hill_fraction : float
+        Surface hill amplitude as a fraction of H (0 => flat).
+    variant : str
+        Passed to :func:`_terrain_operator_ungrounded` (``"whitney"`` is the GO
+        variant).
+    grids : sequence of (nx, nz) pairs
+        Resolution sequence from coarse to fine.
+    L, H : float
+        Domain size.
+    eps : float
+        Diffusivity coefficient.
+    return_details : bool
+        If True, also return ``(slope, grids_list, errors)``.
+
+    Returns
+    -------
+    float or (float, list, list)
+        Finest-two-mesh log-log slope (or slope + grids + errors when
+        ``return_details=True``).
+    """
+    import scipy.sparse.linalg as spla
+
+    hill_height = hill_fraction * H
+    kx = 2.0 * math.pi / L
+    kz = math.pi / H
+
+    errs = []
+    for nx, nz in grids:
+        g = terrain_grid(nx, nz, hill_height, L, H)
+        n_cells = nx * nz
+
+        # Manufactured field at physical cell centres, c(i,k) = i*nz + k.
+        phi_exact = np.sin(kx * g.x)[:, np.newaxis] * np.sin(kz * g.z)  # (nx, nz)
+        phi_exact_flat = phi_exact.reshape(-1)
+
+        # Physical cell volume: dx * dz_physical.
+        V_cell = g.dx * g.dz  # (nx, nz)
+        f = eps * (kx ** 2 + kz ** 2) * phi_exact
+        b = (f * V_cell).reshape(-1)
+
+        # Build ungrounded operator.
+        A = _terrain_operator_ungrounded(g, eps, variant)
+
+        # Dirichlet BCs: all bottom (k=0) and top (k=nz-1) cells are pinned to
+        # the MMS exact values.  Interior cells (k=1..nz-2) are free.
+        dirichlet_set = set()
+        for i in range(nx):
+            dirichlet_set.add(i * nz + 0)        # bottom row
+            dirichlet_set.add(i * nz + (nz - 1)) # top row
+        free_list = [c for c in range(n_cells) if c not in dirichlet_set]
+        dirichlet_list = sorted(dirichlet_set)
+        free = np.array(free_list, dtype=int)
+        dirichlet = np.array(dirichlet_list, dtype=int)
+        phi_d = phi_exact_flat[dirichlet]
+
+        # Reduce: b_K = b[K] - A[K, D] @ phi_D.
+        b_K = b[free] - A[np.ix_(free, dirichlet)] @ phi_d
+        A_K = A[np.ix_(free, free)]
+
+        phi_K = spla.spsolve(A_K.tocsr(), b_K)
+
+        phi_flat = np.empty(n_cells)
+        phi_flat[dirichlet] = phi_d
+        phi_flat[free] = phi_K
+
+        # Measure solution error over interior cells only (k=1..nz-2).
+        mask = np.zeros((nx, nz), dtype=bool)
+        mask[:, 1:nz - 1] = True
+        mask_flat = mask.reshape(-1)
+
+        V_int = V_cell.reshape(-1)[mask_flat]
+        diff = phi_flat[mask_flat] - phi_exact_flat[mask_flat]
+        num = float(np.dot(V_int, diff ** 2))
+        den = float(np.dot(V_int, phi_exact_flat[mask_flat] ** 2))
+        errs.append(math.sqrt(num / den) if den > 0.0 else math.sqrt(num))
+
+    # Finest-two slope: h ~ 1/nx.
+    slope = math.log(errs[-2] / errs[-1]) / math.log(grids[-1][0] / grids[-2][0])
+
+    if return_details:
+        return slope, list(grids), errs
+    return slope

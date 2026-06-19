@@ -7,6 +7,7 @@ Run with:
 """
 
 import importlib.util
+import math
 import pathlib
 import unittest
 
@@ -278,6 +279,24 @@ class WhitneyTerrainTests(unittest.TestCase):
         script = load_script()
         slope = script.terrain_mms_order_mfd(hill_fraction=0.3, variant="whitney")
         self.assertGreaterEqual(slope, 1.9)
+
+
+class TerrainSolutionErrorTests(unittest.TestCase):
+    """Solution-error MMS gate for the terrain operator (Phase B / solution accuracy)."""
+
+    def test_terrain_solution_error_flat_is_second_order(self):
+        """Flat (hill=0) Whitney terrain solution-error slope must be ~2nd order."""
+        script = load_script()
+        slope = script.terrain_solution_error_order(hill_fraction=0.0, variant="whitney")
+        self.assertGreater(slope, 1.9)
+        self.assertLess(slope, 2.1)
+
+    def test_terrain_solution_error_hill_slope_is_positive(self):
+        """Hill (0.3*H) Whitney terrain solution-error slope is finite and positive (diagnostic)."""
+        script = load_script()
+        slope = script.terrain_solution_error_order(hill_fraction=0.3, variant="whitney")
+        self.assertTrue(math.isfinite(slope), f"hill solution-error slope is NaN/inf: {slope}")
+        self.assertGreater(slope, 0.0, f"hill solution-error slope non-positive: {slope}")
 
 
 if __name__ == "__main__":

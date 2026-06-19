@@ -1383,6 +1383,123 @@ def print_convergence_Y42(meshes, run_root, k_rings):
     print(f"GATE (enriched L2 >= 1.9): {'PASS' if enriched['l2'] >= 1.9 else 'FAIL'}")
 
 
+def solution_error_Y42(mesh, variant="cotangent"):
+    """Solve A phi = b (Y_4^2 MMS) and return the relative L2 solution error.
+
+    Assembles the operator, pins cell 0 to the exact value (Dirichlet grounding),
+    solves the reduced system, then measures the area-weighted relative L2 error
+    after subtracting the area-weighted mean from both phi and phi_exact (gauge
+    alignment).
+
+    Parameters
+    ----------
+    mesh : SimpleNamespace
+        Loaded by :func:`load_mesh`.
+    variant : str
+        ``"cotangent"`` uses :func:`assemble_cotangent_laplacian_ungrounded`;
+        ``"baseline"`` assembles ``d0^T diag(edge_weight) d0``.
+
+    Returns
+    -------
+    float
+        Relative L2 solution error sqrt(sum area*(phi-phi_exact)^2) /
+        sqrt(sum area*phi_exact^2) after gauge alignment.
+    """
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as spla
+
+    n_cells = int(mesh.n_edges_on_cell.size)
+    area = np.asarray(mesh.area, dtype=float)
+    R = mesh.sphere_radius
+
+    # MMS field: Y_4^2 normalized by its maximum, eigenvalue lambda = 20/R^2.
+    phi_exact = y42(mesh.lat, mesh.lon)
+    phi_exact = phi_exact / np.max(np.abs(phi_exact))
+    lam = 20.0 / R ** 2
+
+    # Assemble the ungrounded operator.
+    if variant == "cotangent":
+        A = assemble_cotangent_laplacian_ungrounded(mesh)
+    elif variant == "baseline":
+        cells_on_edge = np.asarray(mesh.cells_on_edge, dtype=int)
+        d0 = _signed_cell_difference_incidence(cells_on_edge, n_cells)
+        edge_weight = np.asarray(mesh.edge_weight, dtype=float)
+        A_raw = d0.T @ sp.diags(edge_weight) @ d0
+        A = 0.5 * (A_raw + A_raw.T).tocsr()
+    else:
+        raise ValueError(f"unknown variant {variant!r}")
+
+    # RHS: b_i = area_i * lambda * phi_exact_i  (A acts as area * laplacian).
+    b = area * lam * phi_exact
+
+    # Grounding: pin cell 0, solve reduced (n_cells-1) x (n_cells-1) system.
+    K = np.arange(1, n_cells)
+    b_K = b[K] - A[K, :][:, 0].toarray().ravel() * phi_exact[0]
+    A_K = A[K, :][:, K]
+
+    phi_K = spla.spsolve(A_K.tocsr(), b_K)
+    phi = np.empty(n_cells)
+    phi[0] = phi_exact[0]
+    phi[1:] = phi_K
+
+    # Gauge alignment: subtract area-weighted mean from both.
+    total_area = float(np.sum(area))
+    mean_phi = float(np.dot(area, phi)) / total_area
+    mean_phi_exact = float(np.dot(area, phi_exact)) / total_area
+    phi_aligned = phi - mean_phi
+    phi_exact_aligned = phi_exact - mean_phi_exact
+
+    # Relative L2 solution error.
+    numerator = float(np.dot(area, (phi_aligned - phi_exact_aligned) ** 2))
+    denominator = float(np.dot(area, phi_exact_aligned ** 2))
+    return math.sqrt(numerator / denominator) if denominator > 0.0 else math.sqrt(numerator)
+
+
+def convergence_Y42_solution_error(meshes, variant="cotangent", run_root=None):
+    """Return finest-two-mesh solution-error L2 slope for the Y_4^2 MMS solve.
+
+    For each mesh in ``meshes`` (coarse-to-fine labels such as ``"480km"``),
+    loads the SCVT bundle, solves A phi = b with cell-0 Dirichlet grounding, and
+    measures the relative L2 solution error via :func:`solution_error_Y42`.
+
+    This is the SOLUTION-ERROR metric (solves and compares to phi_exact), as
+    opposed to the OPERATOR-ONLY residual in :func:`convergence_Y42`. The
+    Galerkin/FEM operator-residual (Ax - b / b) underestimates the convergence
+    order; the solution error is the physically meaningful measure.
+
+    Parameters
+    ----------
+    meshes : list of str
+        Mesh labels from coarse to fine (e.g. ``["480km", "240km", "120km", "60km"]``).
+    variant : str
+        ``"cotangent"`` (default) or ``"baseline"``.
+    run_root : path-like, optional
+        Root directory for the SCVT mesh bundles. Defaults to
+        ``~/Data/MPAS/poisson_tier_A2_scvt``.
+
+    Returns
+    -------
+    dict
+        ``{"l2_slope": float, "l2_errors": [float, ...], "rows": [dict, ...]}``.
+        Each row has keys ``"mesh"``, ``"h_m"``, ``"l2_solerr"``.
+    """
+    if run_root is None:
+        run_root = DEFAULT_SCVT_RUN_ROOT
+    run_root = pathlib.Path(run_root).expanduser()
+
+    rows = []
+    l2_errors = []
+    for mesh_name in meshes:
+        mesh = load_mesh(run_root / "meshes" / mesh_name)
+        err = solution_error_Y42(mesh, variant=variant)
+        h_m = mesh_spacing_m(mesh_name)
+        rows.append({"mesh": mesh_name, "h_m": h_m, "l2_solerr": err})
+        l2_errors.append(err)
+
+    slope = convergence_slope(rows, "l2_solerr")
+    return {"l2_slope": slope, "l2_errors": l2_errors, "rows": rows}
+
+
 def main(argv=None):
     args = parse_args(argv)
     args.run_root = args.run_root.expanduser().resolve()
