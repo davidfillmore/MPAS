@@ -1,10 +1,10 @@
-"""Task 7: 3-D shell mesh tests (mesh part).
+"""Task 7 + Task 8: 3-D shell mesh tests (mesh + solve parts).
 
-Tests cover both icosahedral and SCVT-dual shell mesh families.
+Task 7 tests cover both icosahedral and SCVT-dual shell mesh families.
 Each surface triangulation is extruded radially into conforming tetrahedra
 via the Freudenthal–Kuhn sorted-vertex prism split.
 
-Checks:
+Mesh checks (Task 7):
   1. topology.dim == 3, geometry.dim == 3
   2. Every tet has positive signed volume
   3. Total tet volume is within the polyhedral band of the analytic shell volume
@@ -14,6 +14,14 @@ Checks:
   5. Boundary-facet geometry: every boundary facet's centroid lies near the
      inner sphere (r≈R) or the outer sphere (r≈R+H), and both surfaces are
      represented.
+
+Solve checks (Task 8):
+  6. solve_shell returns a finite relative L2 error in (0, 1) on a small icosa
+     shell mesh, and the inner-surface (ground) DOFs are enforced to zero.
+  7. shell_convergence("icosa", 2, "consistent") achieves slope >= 1.9.
+     Like the surface, the shell is capped at 2nd order by the flat-tet geometry
+     (see convergence.py's isoparametric geometry cap note).
+  8. SCVT shell convergence (guarded by scvt_available()): record the matrix.
 """
 import math
 import pathlib
@@ -22,6 +30,8 @@ import numpy as np
 import pytest
 
 from fecore.mesh import icosa, scvt_dual
+from fecore.operator.poisson import solve_shell
+from fecore.verify import convergence, mms
 
 ROOT = pathlib.Path("~/Data/MPAS/poisson_tier_A2_scvt/meshes").expanduser()
 GRID_480 = ROOT / "480km" / "grid.nc"
@@ -322,4 +332,115 @@ class TestScvtShell:
             f"{outer_stray}/{len(outer_radii)} outer-partition boundary facets "
             f"have centroid radius not within {r_tol:.3e} of R+H={R+H:.4e}. "
             f"Range: [{outer_radii.min():.6e}, {outer_radii.max():.6e}]"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Task 8: Shell solve tests (ground Dirichlet + top Neumann MMS)
+# ---------------------------------------------------------------------------
+
+def test_shell_solve_runs_and_is_finite():
+    """solve_shell returns a finite relative L2 error in (0, 1) for P1-consistent.
+
+    Uses a small icosa shell (refine=2, n_layers=2) so this test is fast.
+    The MMS is Y_4^2 * sin(pi/2 * zeta): zero on the inner sphere, zero
+    Neumann on the outer sphere (cos vanishes at zeta=1).
+    """
+    R, H = 1.0, 0.25
+    msh = icosa.icosa_shell_mesh(refine=2, n_layers=2, H=H)
+    uh, err = solve_shell(
+        msh, R=R, H=H, degree=1, rhs_mode="consistent",
+        source_fn=mms.shell_source, exact_fn=mms.shell_exact, eps=1.0,
+    )
+    assert err is not None, "solve_shell returned None for err"
+    assert np.isfinite(err), f"solve_shell returned non-finite err={err}"
+    assert 0 < err < 1.0, f"Expected 0 < err < 1.0, got err={err}"
+
+
+def test_shell_ground_dirichlet_enforced():
+    """Inner-surface DOFs must be zero after solve_shell (ground BC).
+
+    Locates the inner-surface facets by centroid radius, retrieves the
+    corresponding FEM DOFs from the returned function, and checks that
+    all values are numerically zero.  This verifies that the Dirichlet
+    BC is correctly applied — not just set up — by solve_shell.
+    """
+    import dolfinx.fem
+    import dolfinx.mesh as dmesh
+
+    R, H = 1.0, 0.25
+    msh = icosa.icosa_shell_mesh(refine=2, n_layers=2, H=H)
+    uh, _ = solve_shell(
+        msh, R=R, H=H, degree=1, rhs_mode="consistent",
+        source_fn=mms.shell_source, exact_fn=mms.shell_exact, eps=1.0,
+    )
+
+    # Locate inner surface: facets whose centroid radius ≈ R.
+    V = uh.function_space
+    tol = 0.05 * R
+    inner_facets = dmesh.locate_entities_boundary(
+        msh, msh.topology.dim - 1,
+        lambda x: np.linalg.norm(x, axis=0) < R + tol,
+    )
+    inner_dofs = dolfinx.fem.locate_dofs_topological(
+        V, msh.topology.dim - 1, inner_facets
+    )
+    assert len(inner_dofs) > 0, "No inner-surface DOFs found — inner boundary missing"
+    max_val = float(np.abs(uh.x.array[inner_dofs]).max())
+    assert max_val < 1e-12, (
+        f"Ground Dirichlet not enforced: max |uh| on inner surface = {max_val:.3e}"
+    )
+
+
+def test_icosa_shell_p2_is_second_order():
+    """P2 FEM on the icosa shell must achieve slope >= 1.9 (icosa gate).
+
+    The threshold is >= 1.9 (not ~3.0) because the shell is meshed with
+    degree-1 geometry (flat tetrahedra approximating the spherical shell):
+    the same isoparametric geometry cap that applies on the surface (see
+    convergence.py's module docstring) applies here.  P2 elements achieve
+    ~2.0 slope, limited by the O(h^2) geometric approximation error of the
+    flat tets — not by polynomial degree.
+
+    Horizontal resolution doubles at each level (refine=2,3,4) while
+    n_layers doubles too (4,8,16), so the 3-D L^2 rate truly reflects the
+    combined horizontal+vertical refinement without the fixed-nVertLevels
+    cap that plagues MPAS-FV convergence studies.
+
+    GO  -> this assert passes; do not touch it.
+    NO-GO -> xfail with a verdict note; NEVER lower 1.9.
+    """
+    result = convergence.shell_convergence("icosa", degree=2, rhs_mode="consistent")
+    s = result["slope"]
+    assert s >= 1.9, (
+        f"icosa shell P2 slope {s:.4f} < 1.9  "
+        f"(h={[f'{v:.4g}' for v in result['h']]}, "
+        f"err={[f'{v:.4g}' for v in result['err']]})"
+    )
+
+
+@pytest.mark.skipif(
+    not convergence.scvt_available(),
+    reason="SCVT mesh bundle not present at expected path",
+)
+def test_scvt_shell_convergence_recorded():
+    """Record SCVT shell convergence matrix (P1 and P2 consistent).
+
+    This test always passes: it records the slope for documentation and
+    verifies the solve returns a finite positive error.  The SCVT shell
+    gate is a *record* test — we do not assert a slope threshold here
+    because the moderate n_layers budget (2/4/8 layers) may reduce the
+    measured rate relative to the icosa family.
+
+    The icosa gate (test_icosa_shell_p2_is_second_order) carries the GO/NO-GO
+    verdict; this test records the SCVT data for the report.
+    """
+    for degree in (1, 2):
+        result = convergence.shell_convergence(
+            "scvt", degree=degree, rhs_mode="consistent"
+        )
+        s = result["slope"]
+        assert np.isfinite(s), f"SCVT shell P{degree} slope is not finite: {s}"
+        assert all(e > 0 for e in result["err"]), (
+            f"SCVT shell P{degree} errors contain non-positive values: {result['err']}"
         )
