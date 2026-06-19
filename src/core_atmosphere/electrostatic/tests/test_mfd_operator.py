@@ -152,5 +152,32 @@ class MimeticAssemblyTests(unittest.TestCase):
         # ...and a constant field is annihilated.
         np.testing.assert_allclose(A_int @ np.ones(n_cells), np.zeros(n_cells), atol=1e-10)
 
+class TetP1StiffnessTests(unittest.TestCase):
+    def _unit_tet(self):
+        # reference tet: origin + unit axes
+        return np.array([[0.,0.,0.],[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]])
+
+    def test_symmetric_psd_and_annihilates_constants(self):
+        m = load()
+        K = m.tet_p1_stiffness(self._unit_tet())
+        self.assertEqual(K.shape, (4, 4))
+        np.testing.assert_allclose(K, K.T, atol=1e-12)
+        np.testing.assert_allclose(K @ np.ones(4), np.zeros(4), atol=1e-12)
+        evals = np.linalg.eigvalsh(K)
+        self.assertGreaterEqual(evals.min(), -1e-12)         # PSD
+        self.assertEqual(int(np.sum(evals > 1e-9)), 3)        # rank 3 (nullspace=const)
+
+    def test_reproduces_linear_field_energy(self):
+        # For phi linear with gradient g, the P1 stiffness energy phi^T K phi
+        # equals vol*|g|^2 exactly (P1 is exact for linear fields).
+        m = load()
+        tet = np.array([[0.,0.,0.],[2.,0.,0.],[0.,3.,0.],[0.,0.,1.5]])
+        K = m.tet_p1_stiffness(tet)
+        g = np.array([0.7, -1.3, 0.4])
+        phi = tet @ g                                          # linear nodal values
+        vol = abs(np.linalg.det(np.column_stack((np.ones(4), tet)))) / 6.0
+        self.assertAlmostEqual(float(phi @ K @ phi), vol * float(g @ g), places=10)
+
+
 if __name__ == "__main__":
     unittest.main()

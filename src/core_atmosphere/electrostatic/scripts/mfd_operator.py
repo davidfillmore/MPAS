@@ -123,6 +123,19 @@ def cotangent_hodge_weights(triangle_xyz):
     return weights, local_pairs
 
 
+def tet_p1_stiffness(tet_xyz):
+    """P1 (linear-FEM) local stiffness for one tetrahedron — the 3-D cotangent
+    Hodge contribution. tet_xyz: (4,3). K_ij = vol * (grad lambda_i . grad lambda_j),
+    symmetric PSD, K @ 1 = 0. Reduces, when assembled, to the cotangent Laplacian."""
+    p = np.asarray(tet_xyz, dtype=float)
+    M = np.column_stack((np.ones(4), p))        # rows: [1, x, y, z] per vertex
+    Minv = np.linalg.inv(M)
+    grads = Minv[1:4, :].T                        # (4,3): grad of each barycentric basis
+    vol = abs(np.linalg.det(M)) / 6.0
+    K = vol * (grads @ grads.T)
+    return 0.5 * (K + K.T)
+
+
 def spd_min_eig(A_csr):
     """Smallest algebraic eigenvalue (SPD check) of a grounded operator."""
     return float(spla.eigsh(A_csr, k=1, which="SA", return_eigenvectors=False)[0])
