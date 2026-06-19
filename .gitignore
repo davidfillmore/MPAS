@@ -73,3 +73,8 @@ docs/_build/
 
 # Build-time staging directory for chemistry archive (contains ar symbol index)
 src/core_atmosphere/libchem/
+
+# Python bytecode (fecore and any future Python packages)
+__pycache__/
+*.pyc
+*.pyo
