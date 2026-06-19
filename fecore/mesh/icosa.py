@@ -135,8 +135,16 @@ def _subdivided_icosa(levels: int):
             ])
         tris = new_tris
 
-    return (np.array(pts, dtype=np.float64),
-            np.array(tris, dtype=np.int64))
+    pts_arr = np.array(pts, dtype=np.float64)
+    tris_arr = np.array(tris, dtype=np.int64)
+
+    # Guarantee consistent outward orientation on the final mesh regardless of
+    # how subdivision winding may have drifted.  The mesh is star-shaped from
+    # the origin so the per-triangle rule (swap v1↔v2 when centroid·normal < 0)
+    # is valid at every refinement level.
+    _orient_outward(tris_arr, pts_arr)
+
+    return pts_arr, tris_arr
 
 
 def _orient_outward(tris: np.ndarray, pts: np.ndarray) -> None:
