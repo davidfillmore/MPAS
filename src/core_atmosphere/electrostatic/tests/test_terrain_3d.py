@@ -40,3 +40,18 @@ class TerrainOperator3DTests(unittest.TestCase):
         rings = m.halo_rings(g)
         self.assertGreaterEqual(rings, 1)      # records the actual coupling reach
         print(f"\n[terrain] measured halo rings = {rings}")
+
+
+class TerrainMMSGateTests(unittest.TestCase):
+    def test_flat_honesty_guard_is_second_order(self):
+        """Structural guard: flat domain MUST be ~2nd order ([1.9, 2.1])."""
+        m = load()
+        slope = m.terrain_mms_order(hill_fraction=0.0)
+        self.assertGreater(slope, 1.9)
+        self.assertLess(slope, 2.1)
+
+    def test_terrain_gate_is_second_order_on_hill(self):
+        """AXIS-1 GATE. GO if the 3-D cotangent terrain operator stays ~2nd order."""
+        m = load()
+        slope = m.terrain_mms_order(hill_fraction=0.3)
+        self.assertGreaterEqual(slope, 1.9)

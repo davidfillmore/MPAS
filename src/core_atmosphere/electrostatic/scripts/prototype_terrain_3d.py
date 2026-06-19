@@ -62,6 +62,39 @@ def terrain_mesh_3d(n_side, nz, hill_fraction, L=1.0, H=1.0):
 # B2: 3-D terrain cotangent operator (Delaunay tetrahedralization + P1 stiffness)
 # ---------------------------------------------------------------------------
 
+def _filtered_tets(mesh):
+    """Return the filtered list of (tet_indices, vol) pairs used by both the
+    operator and the lumped-mass cell volumes.
+
+    Two filters (same as the original operator docstring):
+    1. Volume filter: vol < 1e-12 — skip degenerate slivers.
+    2. Horizontal-reach filter: any column pair more than 2*dx apart — removes
+       convex-hull boundary tets that bridge distant columns.
+
+    Returns list of (tet, vol) where tet is a length-4 int array of node indices
+    and vol is the physical tet volume.  Both `terrain_operator_ungrounded` and
+    `_cell_volumes` must call this helper so they integrate over identical supports.
+    """
+    nz = mesh.nz
+    dx = mesh.L / int(round(math.sqrt(mesh.nCellsH)))
+    h_thresh = 2.0 * dx
+    tri = Delaunay(mesh.xyz)
+    retained = []
+    for tet in tri.simplices:
+        p = mesh.xyz[tet]
+        M = np.column_stack((np.ones(4), p))
+        vol = abs(np.linalg.det(M)) / 6.0
+        if vol < 1e-12:
+            continue
+        ihs = [int(i) // nz for i in tet]
+        max_h = max(np.linalg.norm(mesh.xy[ihs[a]] - mesh.xy[ihs[b]])
+                    for a in range(4) for b in range(a + 1, 4))
+        if max_h > h_thresh:
+            continue
+        retained.append((tet, vol))
+    return retained
+
+
 def terrain_operator_ungrounded(mesh):
     """Assemble A = Σ_tet K_tet (P1 stiffness) over Delaunay tets; symmetric PSD,
     annihilates constants (K@1=0 per tet, so A@1=0).
@@ -75,27 +108,15 @@ def terrain_operator_ungrounded(mesh):
        terrain columns). Threshold 2*dx retains genuine near-diagonal cross-column
        couplings (~sqrt(2)*dx diagonal) while rejecting long-range artifacts.
        This is a deterministic, geometry-based filter (no jitter, no randomness).
+
+    Uses _filtered_tets so that the assembled operator and _cell_volumes integrate
+    over the same tet set (required for self-consistent P1 MMS residuals).
     """
     mfd = _mfd()
     N = mesh.xyz.shape[0]
-    nz = mesh.nz
-    dx = mesh.L / int(round(math.sqrt(mesh.nCellsH)))
-    h_thresh = 2.0 * dx          # max allowed horizontal span within one tet
-    tri = Delaunay(mesh.xyz)
     rows, cols, data = [], [], []
-    for tet in tri.simplices:
-        # Filter degenerate tets BEFORE calling tet_p1_stiffness (which inverts M).
+    for tet, _vol in _filtered_tets(mesh):
         p = mesh.xyz[tet]
-        M = np.column_stack((np.ones(4), p))
-        vol = abs(np.linalg.det(M)) / 6.0
-        if vol < 1e-12:
-            continue
-        # Filter long-range convex-hull artifacts: skip tets spanning distant columns.
-        ihs = [int(i) // nz for i in tet]
-        max_h = max(np.linalg.norm(mesh.xy[ihs[a]] - mesh.xy[ihs[b]])
-                    for a in range(4) for b in range(a + 1, 4))
-        if max_h > h_thresh:
-            continue
         K = mfd.tet_p1_stiffness(p)
         for a in range(4):
             for b in range(4):
@@ -157,3 +178,69 @@ def halo_rings(mesh):
             continue
         worst = max(worst, hdist(r // nz, c // nz))
     return worst
+
+
+# ---------------------------------------------------------------------------
+# B3: MMS consistency gate (Axis 1)
+# ---------------------------------------------------------------------------
+
+def _cell_volumes(mesh):
+    """Per-cell lumped-mass volume: 1/4 of the sum of tet volumes incident to the cell.
+
+    IMPORTANT: uses _filtered_tets (the same filtered Delaunay tet set used by
+    terrain_operator_ungrounded) rather than a fresh full Delaunay.  Consistency
+    between the operator (A @ phi) and the RHS (source * V_cell) requires both to
+    integrate over identical supports; a fresh unfiltered Delaunay would sum over
+    additional long-range convex-hull tets that the operator excludes, breaking
+    self-consistency and preventing the flat honesty guard from reaching ~2.0.
+    """
+    vol = np.zeros(mesh.xyz.shape[0])
+    for tet, v in _filtered_tets(mesh):
+        for a in tet:
+            vol[a] += v / 4.0
+    return vol
+
+
+def _terrain_residual_rel_l2(mesh, eps):
+    """Relative L2 residual ||A phi - b|| / ||phi|| over interior nodes.
+
+    Denominator is ||phi[interior]||_2 (not ||b||_2).  The lumped-mass RHS
+    b_i = eps*lambda*phi_i*V_i contains a factor V_i ~ h^3, so ||b||_2 ~ h^{3/2}
+    while ||A@phi - b||_2 ~ h^{3/2+2} = h^{7/2}, giving a relative error that
+    GROWS with refinement (slope ~ -2) when normalized by ||b||.  Normalizing by
+    ||phi|| (which is O(1) as h→0) gives the correct operator-only MMS order:
+    slope ~ 2 for a consistent 2nd-order cotangent operator.
+    """
+    A = terrain_operator_ungrounded(mesh)
+    x, y, z = mesh.xyz[:, 0], mesh.xyz[:, 1], mesh.xyz[:, 2]
+    kx = ky = math.pi / mesh.L
+    kz = math.pi / mesh.H
+    phi = np.sin(kx * x) * np.sin(ky * y) * np.sin(kz * z)
+    V = _cell_volumes(mesh)
+    b = eps * (kx**2 + ky**2 + kz**2) * phi * V
+    r = A @ phi - b
+    mask = mesh.interior
+    return float(np.linalg.norm(r[mask]) / np.linalg.norm(phi[mask]))
+
+
+def terrain_mms_order(hill_fraction, sides=(8, 12, 18), nz_of=None,
+                      L=1.0, H=1.0, eps=1.0, return_details=False):
+    """Estimate MMS convergence order for the 3-D terrain cotangent operator.
+
+    For each n_side in `sides`, builds the terrain mesh, samples the manufactured
+    solution phi = sin(pi*x/L) sin(pi*y/L) sin(pi*z/H) (zero on box boundary),
+    forms the consistent FV RHS b = eps*((pi/L)^2+(pi/L)^2+(pi/H)^2)*phi*V_cell
+    with V_cell the lumped-mass volume from the FILTERED tet set (matching the
+    operator), and computes the relative L2 residual over mesh.interior.
+    Returns the finest-two log-log slope as the convergence order estimate.
+    """
+    if nz_of is None:
+        nz_of = lambda s: s
+    errs = []
+    for s in sides:
+        g = terrain_mesh_3d(s, nz_of(s), hill_fraction, L, H)
+        errs.append(_terrain_residual_rel_l2(g, eps))
+    slope = math.log(errs[-2] / errs[-1]) / math.log(sides[-1] / sides[-2])
+    if return_details:
+        return slope, list(sides), errs
+    return slope
