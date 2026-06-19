@@ -9,7 +9,7 @@ import pathlib as _pl
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
-from scipy.spatial import Delaunay, cKDTree
+from scipy.spatial import Delaunay
 
 _MFD = _pl.Path(__file__).resolve().parent / "mfd_operator.py"
 def _mfd():
@@ -59,63 +59,93 @@ def terrain_mesh_3d(n_side, nz, hill_fraction, L=1.0, H=1.0):
 
 
 # ---------------------------------------------------------------------------
-# B2: 3-D terrain cotangent operator (Delaunay tetrahedralization + P1 stiffness)
+# B2: 3-D terrain cotangent operator (STRUCTURED conforming prism->tet mesh)
 # ---------------------------------------------------------------------------
 
-def _filtered_tets(mesh):
-    """Return the filtered list of (tet_indices, vol) pairs used by both the
-    operator and the lumped-mass cell volumes.
+def _structured_prism_tets(mesh):
+    """Return ALL tets of a STRUCTURED, CONFORMING prism->tet mesh of the column
+    extrusion — no Delaunay-in-3-D, no volume filter, no horizontal-reach filter.
 
-    Two filters (same as the original operator docstring):
-    1. Volume filter: vol < 1e-12 — skip degenerate slivers.
-    2. Horizontal-reach filter: any column pair more than 2*dx apart — removes
-       convex-hull boundary tets that bridge distant columns.
+    Construction
+    ------------
+    1. Horizontal triangulation: ``scipy.spatial.Delaunay(mesh.xy)`` of the column
+       centres (a 2-D Delaunay of the lattice columns is well behaved) gives the
+       column-triangle connectivity only.
+    2. For every horizontal triangle (columns a,b,c) and every vertical gap between
+       consecutive cell-centre levels L and L+1 (L = 0 .. nz-2), the six nodes
+       (a,L),(b,L),(c,L),(a,L+1),(b,L+1),(c,L+1) form a triangular PRISM.  Each
+       prism is split into 3 tetrahedra.
 
-    Returns list of (tet, vol) where tet is a length-4 int array of node indices
-    and vol is the physical tet volume.  Both `terrain_operator_ungrounded` and
-    `_cell_volumes` must call this helper so they integrate over identical supports.
+    Conformity (CRITICAL)
+    ---------------------
+    The quadrilateral side faces shared between horizontally-adjacent prisms must
+    be split by the SAME diagonal from both sides, or the mesh is non-conforming
+    (gaps/overlaps) and the operator is inconsistent.  We use the canonical
+    sorted-vertex Freudenthal-Kuhn prism split:
+
+        * Order the three columns by GLOBAL column index -> (g0 < g1 < g2) with
+          local bottom labels (s0,s1,s2) and tops (t0,t1,t2) = (s0+? ...) directly
+          above.
+        * Apply the fixed 3-tet template to the SORTED prism:
+              (s0,s1,s2,t2), (s0,s1,t2,t1), (s0,t1,t2,t0).
+
+    Because the global column index is a TOTAL order, any two prisms that share a
+    vertical quad face (i.e. share two columns) sort those two columns identically,
+    so they pick the IDENTICAL face diagonal.  The split therefore tiles the column
+    extrusion with no gaps or overlaps (verified: the 3 tet volumes sum exactly to
+    the prism volume for every column ordering, and adjacent prisms agree on the
+    shared-face diagonal).
+
+    Node indexing matches ``mesh.cell_index(ih, k) = ih*nz + k``.
+
+    Returns list of ``(tet, vol)`` where ``tet`` is a length-4 int array of node
+    indices and ``vol`` is the physical tet volume.  ``terrain_operator_ungrounded``,
+    ``_cell_volumes`` and ``halo_rings`` all consume this single helper so the
+    operator (A @ phi) and the RHS (source * V_cell) integrate over identical,
+    fully-covering supports.
     """
     nz = mesh.nz
-    dx = mesh.L / int(round(math.sqrt(mesh.nCellsH)))
-    h_thresh = 2.0 * dx
-    tri = Delaunay(mesh.xyz)
-    retained = []
-    for tet in tri.simplices:
-        p = mesh.xyz[tet]
+    xyz = mesh.xyz
+
+    def node(ih, k):
+        return ih * nz + k
+
+    def tet_vol(t):
+        p = xyz[list(t)]
         M = np.column_stack((np.ones(4), p))
-        vol = abs(np.linalg.det(M)) / 6.0
-        if vol < 1e-12:
-            continue
-        ihs = [int(i) // nz for i in tet]
-        max_h = max(np.linalg.norm(mesh.xy[ihs[a]] - mesh.xy[ihs[b]])
-                    for a in range(4) for b in range(a + 1, 4))
-        if max_h > h_thresh:
-            continue
-        retained.append((tet, vol))
-    return retained
+        return abs(np.linalg.det(M)) / 6.0
+
+    tri = Delaunay(mesh.xy)                      # 2-D Delaunay: column connectivity
+    tets = []
+    for simplex in tri.simplices:
+        cols = sorted(int(c) for c in simplex)   # ascending GLOBAL column index
+        c0, c1, c2 = cols
+        for kL in range(nz - 1):
+            kU = kL + 1
+            # local bottom verts (s0,s1,s2) sorted by global column, tops above
+            s0, s1, s2 = node(c0, kL), node(c1, kL), node(c2, kL)
+            t0, t1, t2 = node(c0, kU), node(c1, kU), node(c2, kU)
+            for t in ((s0, s1, s2, t2), (s0, s1, t2, t1), (s0, t1, t2, t0)):
+                v = tet_vol(t)
+                if v <= 0.0:
+                    continue                     # only skip exactly-degenerate tets
+                tets.append((np.array(t, dtype=int), v))
+    return tets
 
 
 def terrain_operator_ungrounded(mesh):
-    """Assemble A = Σ_tet K_tet (P1 stiffness) over Delaunay tets; symmetric PSD,
-    annihilates constants (K@1=0 per tet, so A@1=0).
+    """Assemble A = Sum_tet K_tet (P1 stiffness) over the STRUCTURED conforming
+    prism->tet mesh; symmetric PSD, annihilates constants (K@1 = 0 per tet, so
+    A@1 = 0).
 
-    Two defenses against structured-lattice Delaunay pathologies:
-    1. Volume filter: skip tets with vol < 1e-12 (degenerate slivers that crash inv).
-    2. Horizontal-reach filter: skip tets where any horizontal column pair is more
-       than 2*dx apart. This removes the convex-hull boundary tets that Delaunay on
-       a structured point cloud always creates — these bridge corner points many grid
-       spacings apart and are physically spurious (they do not represent neighboring
-       terrain columns). Threshold 2*dx retains genuine near-diagonal cross-column
-       couplings (~sqrt(2)*dx diagonal) while rejecting long-range artifacts.
-       This is a deterministic, geometry-based filter (no jitter, no randomness).
-
-    Uses _filtered_tets so that the assembled operator and _cell_volumes integrate
-    over the same tet set (required for self-consistent P1 MMS residuals).
+    The tet set comes from ``_structured_prism_tets`` (full coverage of the column
+    extrusion, no filters).  P1 stiffness on a conforming full-coverage tet mesh is
+    a consistent discrete Laplacian, and SPD + constant-annihilation are automatic.
     """
     mfd = _mfd()
     N = mesh.xyz.shape[0]
     rows, cols, data = [], [], []
-    for tet, _vol in _filtered_tets(mesh):
+    for tet, _vol in _structured_prism_tets(mesh):
         p = mesh.xyz[tet]
         K = mfd.tet_p1_stiffness(p)
         for a in range(4):
@@ -141,14 +171,24 @@ def spd_min_eig_of(A):
 
 
 def _horizontal_adjacency(mesh):
-    """Nearest-neighbor column adjacency from the triangular lattice (~6 neighbors)."""
-    dx = mesh.L / int(round(math.sqrt(mesh.nCellsH)))
-    tree = cKDTree(mesh.xy)
-    adj = [[] for _ in range(mesh.nCellsH)]
-    for ih in range(mesh.nCellsH):
-        idx = tree.query_ball_point(mesh.xy[ih], r=1.5 * dx)
-        adj[ih] = [j for j in idx if j != ih]
-    return adj
+    """Nearest-neighbor column adjacency = the EDGES of the same 2-D Delaunay
+    triangulation the operator's prisms are built from.
+
+    Deriving adjacency from the triangulation (rather than a fixed KD-tree radius)
+    makes the halo measurement consistent with the actual operator support: two
+    columns are 1-ring neighbours iff they share a horizontal-triangle edge, which
+    is exactly when their prism columns can couple in A.  A fixed 1.5*dx radius
+    misses some genuine edge neighbours on the staggered lattice's domain edge
+    (offset rows sit ~2.1*dx apart) and would spuriously report those true
+    neighbours as a 2nd ring.
+    """
+    tri = Delaunay(mesh.xy)
+    adj = [set() for _ in range(mesh.nCellsH)]
+    for simplex in tri.simplices:
+        a, b, c = (int(i) for i in simplex)
+        for u, v in ((a, b), (b, c), (a, c)):
+            adj[u].add(v); adj[v].add(u)
+    return [sorted(s) for s in adj]
 
 
 def halo_rings(mesh):
@@ -181,35 +221,69 @@ def halo_rings(mesh):
 
 
 # ---------------------------------------------------------------------------
-# B3: MMS consistency gate (Axis 1)
+# B3: MMS consistency gate (Axis 1) -- honest pointwise truncation
 # ---------------------------------------------------------------------------
 
 def _cell_volumes(mesh):
     """Per-cell lumped-mass volume: 1/4 of the sum of tet volumes incident to the cell.
 
-    IMPORTANT: uses _filtered_tets (the same filtered Delaunay tet set used by
-    terrain_operator_ungrounded) rather than a fresh full Delaunay.  Consistency
-    between the operator (A @ phi) and the RHS (source * V_cell) requires both to
-    integrate over identical supports; a fresh unfiltered Delaunay would sum over
-    additional long-range convex-hull tets that the operator excludes, breaking
-    self-consistency and preventing the flat honesty guard from reaching ~2.0.
+    Uses ``_structured_prism_tets`` (the SAME conforming, full-coverage tet set the
+    operator assembles over) rather than a fresh Delaunay, so (A @ phi) and
+    b = eps*lambda*phi*V integrate over identical supports — required for a
+    self-consistent P1 MMS residual.
     """
     vol = np.zeros(mesh.xyz.shape[0])
-    for tet, v in _filtered_tets(mesh):
+    for tet, v in _structured_prism_tets(mesh):
         for a in tet:
             vol[a] += v / 4.0
     return vol
 
 
-def _terrain_residual_rel_l2(mesh, eps):
-    """Relative L2 residual ||A phi - b|| / ||phi|| over interior nodes.
+def coverage_fraction(mesh):
+    """Fraction of the column-extrusion volume covered by the structured tets.
 
-    Denominator is ||phi[interior]||_2 (not ||b||_2).  The lumped-mass RHS
-    b_i = eps*lambda*phi_i*V_i contains a factor V_i ~ h^3, so ||b||_2 ~ h^{3/2}
-    while ||A@phi - b||_2 ~ h^{3/2+2} = h^{7/2}, giving a relative error that
-    GROWS with refinement (slope ~ -2) when normalized by ||b||.  Normalizing by
-    ||phi|| (which is O(1) as h→0) gives the correct operator-only MMS order:
-    slope ~ 2 for a consistent 2nd-order cotangent operator.
+    Denominator is the ANALYTIC column-extrusion volume: the 2-D triangulated
+    column-hull, vertically extruded between the bottom (k=0) and top (k=nz-1)
+    cell-centre levels (terrain-following column thicknesses included).  A
+    conforming, gap-free tiling returns ~1.0.  (The structured tets exactly tile
+    this region by construction.)
+    """
+    nz = mesh.nz
+    tri = Delaunay(mesh.xy)
+    # analytic extrusion volume = sum over horizontal triangles of (base area *
+    # mean column extent from level 0 to level nz-1).
+    analytic = 0.0
+    for simplex in tri.simplices:
+        a, b, c = (int(i) for i in simplex)
+        p = mesh.xy[[a, b, c]]
+        base = 0.5 * abs((p[1, 0] - p[0, 0]) * (p[2, 1] - p[0, 1])
+                         - (p[2, 0] - p[0, 0]) * (p[1, 1] - p[0, 1]))
+        extent = np.mean([mesh.zcol[a, nz - 1] - mesh.zcol[a, 0],
+                          mesh.zcol[b, nz - 1] - mesh.zcol[b, 0],
+                          mesh.zcol[c, nz - 1] - mesh.zcol[c, 0]])
+        analytic += base * extent
+    tet_total = sum(v for _t, v in _structured_prism_tets(mesh))
+    return float(tet_total / analytic)
+
+
+def _terrain_residual_details(mesh, eps):
+    """Pointwise + L2 MMS truncation diagnostics for the structured operator.
+
+    Manufactured solution phi = sin(kx x) sin(ky y) sin(kz z) (zero on the box
+    boundary).  Consistent lumped-mass FV RHS b_i = eps*(kx^2+ky^2+kz^2)*phi_i*V_i
+    with V_i the lumped-mass cell volume from the structured tet set.  Residual
+    r = A_ung @ phi - b.
+
+    Returns a dict over INTERIOR cells (mesh.interior) restricted further to cells
+    with |b_i| > 1e-3 * max|b| (drop near-nodal cells where b ~ 0 and the relative
+    measure is ill-posed):
+        pointwise_max : max_i |r_i / b_i|   (the honest, normalization-independent
+                        per-cell relative truncation; ~decreasing-with-h for a
+                        consistent operator)
+        pointwise_rms : RMS of r_i / b_i
+        rel_l2        : ||r||_2 / ||b||_2   (the convention the 2-D prototype's
+                        _mms_residual_relative_l2 uses; cross-check)
+    No ||phi|| normalization anywhere.
     """
     A = terrain_operator_ungrounded(mesh)
     x, y, z = mesh.xyz[:, 0], mesh.xyz[:, 1], mesh.xyz[:, 2]
@@ -219,28 +293,40 @@ def _terrain_residual_rel_l2(mesh, eps):
     V = _cell_volumes(mesh)
     b = eps * (kx**2 + ky**2 + kz**2) * phi * V
     r = A @ phi - b
-    mask = mesh.interior
-    return float(np.linalg.norm(r[mask]) / np.linalg.norm(phi[mask]))
+
+    mask = mesh.interior & (np.abs(b) > 1e-3 * np.max(np.abs(b)))
+    rb = r[mask] / b[mask]
+    return {
+        "pointwise_max": float(np.max(np.abs(rb))),
+        "pointwise_rms": float(np.sqrt(np.mean(rb**2))),
+        "rel_l2": float(np.linalg.norm(r[mask]) / np.linalg.norm(b[mask])),
+        "n_active": int(mask.sum()),
+    }
 
 
 def terrain_mms_order(hill_fraction, sides=(8, 12, 18), nz_of=None,
                       L=1.0, H=1.0, eps=1.0, return_details=False):
-    """Estimate MMS convergence order for the 3-D terrain cotangent operator.
+    """Estimate MMS convergence order for the 3-D terrain cotangent operator using
+    the HONEST pointwise relative truncation ``max_i |r_i / b_i|``.
 
-    For each n_side in `sides`, builds the terrain mesh, samples the manufactured
-    solution phi = sin(pi*x/L) sin(pi*y/L) sin(pi*z/H) (zero on box boundary),
-    forms the consistent FV RHS b = eps*((pi/L)^2+(pi/L)^2+(pi/H)^2)*phi*V_cell
-    with V_cell the lumped-mass volume from the FILTERED tet set (matching the
-    operator), and computes the relative L2 residual over mesh.interior.
-    Returns the finest-two log-log slope as the convergence order estimate.
+    For each n_side in ``sides`` builds the terrain mesh, samples the manufactured
+    solution phi = sin(pi x/L) sin(pi y/L) sin(pi z/H), forms the consistent FV RHS
+    b = eps*((pi/L)^2+(pi/L)^2+(pi/H)^2)*phi*V_cell with V_cell the lumped-mass
+    volume from the structured tet set, and measures the pointwise relative
+    truncation over interior cells with |b_i| > 1e-3*max|b|.  Returns the finest-two
+    log-log slope of ``pointwise_max`` as the convergence-order estimate.  A
+    consistent 2nd-order operator gives slope ~2 (error decreasing with refinement).
+
+    With return_details=True also returns (sides, list-of-detail-dicts).
     """
     if nz_of is None:
         nz_of = lambda s: s
-    errs = []
+    details = []
     for s in sides:
         g = terrain_mesh_3d(s, nz_of(s), hill_fraction, L, H)
-        errs.append(_terrain_residual_rel_l2(g, eps))
-    slope = math.log(errs[-2] / errs[-1]) / math.log(sides[-1] / sides[-2])
+        details.append(_terrain_residual_details(g, eps))
+    em = [d["pointwise_max"] for d in details]
+    slope = math.log(em[-2] / em[-1]) / math.log(sides[-1] / sides[-2])
     if return_details:
-        return slope, list(sides), errs
+        return slope, list(sides), details
     return slope
