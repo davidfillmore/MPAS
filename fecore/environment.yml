@@ -1,0 +1,23 @@
+# fecore — Finite-Element Core (FEniCSx/dolfinx) environment.
+#
+# Recreate with:
+#     conda env create -f fecore/environment.yml
+#     conda activate fecore
+#     python -m pytest fecore/tests/ -q
+#
+# Verified working for sub-project 1 (2026-06-19): dolfinx 0.10.0 on MPICH,
+# Python 3.14, on macOS (Homebrew toolchain) via conda-forge.
+# (During development netCDF4 and pytest were pip-installed; both are on
+# conda-forge and are pinned here so the verified toolchain is reproducible.)
+name: fecore
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - fenics-dolfinx=0.10.0
+  - mpich                 # the MPI dolfinx was built against (mpi=*=mpich)
+  - petsc4py=3.24
+  - mpi4py=4.1
+  - numpy=2.4
+  - netcdf4=1.7           # MPAS SCVT grid.nc reader (mesh/scvt_dual.py)
+  - pytest=9.1
