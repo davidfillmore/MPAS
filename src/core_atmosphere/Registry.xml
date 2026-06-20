@@ -2089,6 +2089,14 @@
                      packages="electrostatic_pkg"
                      description="Free charge density supplied to the Poisson solver."/>
 
+                <var name="poisson_zmid" type="real" dimensions="nVertLevels nCells Time" units="m MSL"
+                     packages="electrostatic_pkg"
+                     description="Altitude-coordinate Poisson cell-center height."/>
+
+                <var name="poisson_air_thickness" type="real" dimensions="nVertLevels nCells Time" units="m"
+                     packages="electrostatic_pkg"
+                     description="Active air thickness of the altitude-coordinate Poisson cell after terrain clipping."/>
+
                 <var name="E_normal" type="real" dimensions="nVertLevels nEdges Time" units="V m^{-1}"
                      packages="electrostatic_pkg"
                      description="Horizontal edge-normal electric field component."/>

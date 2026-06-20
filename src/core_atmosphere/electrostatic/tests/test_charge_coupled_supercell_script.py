@@ -124,6 +124,20 @@ class ChargeCoupledSupercellScriptTests(unittest.TestCase):
             self.assertIsNotNone(var)
             self.assertIn("Time", var.attrib["dimensions"].split())
 
+    def test_registry_has_poisson_altitude_coordinate_fields(self):
+        tree = ET.parse(REGISTRY_PATH)
+        electrostatic = tree.find(".//var_struct[@name='electrostatic']")
+        self.assertIsNotNone(electrostatic)
+
+        expected = {
+            "poisson_zmid": "nVertLevels nCells Time",
+            "poisson_air_thickness": "nVertLevels nCells Time",
+        }
+        for name, dims in expected.items():
+            var = electrostatic.find(f"./var[@name='{name}']")
+            self.assertIsNotNone(var, f"missing {name}")
+            self.assertEqual(var.attrib["dimensions"], dims)
+
 
 if __name__ == "__main__":
     unittest.main()
