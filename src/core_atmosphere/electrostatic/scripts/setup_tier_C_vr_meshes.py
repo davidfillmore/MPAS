@@ -25,6 +25,16 @@ VR_MESHES = {
     "vr_240_60":  dict(fine_km=60.0,  coarse_km=240.0),
     "vr_120_30":  dict(fine_km=30.0,  coarse_km=120.0),
 }
+# Matched uniform-CVT control meshes: uniform density (fine==coarse) on the SAME
+# fine density grid as the VR meshes -> a general centroidal-Voronoi mesh (NOT the
+# icosahedral SCVT), so it shares the VR meshes' topological-defect family. This is
+# the de-confounded baseline against which the VR transition is judged.
+UNIFORM_MESHES = {
+    "u_480": dict(fine_km=480.0, coarse_km=480.0),
+    "u_240": dict(fine_km=240.0, coarse_km=240.0),
+    "u_120": dict(fine_km=120.0, coarse_km=120.0),
+}
+ALL_MESHES = {**VR_MESHES, **UNIFORM_MESHES}
 DEFAULT_PATCH = dict(lat0=0.0, lon0=0.0, r_in_deg=14.0, r_out_deg=34.0)
 
 
@@ -91,14 +101,41 @@ def generate_vr_mesh(bundle_dir, work_dir, *, fine_km, coarse_km, patch, dlat_de
     shutil.copy2(work_dir / "graph.info", graph)
 
 
+def defect_audit(grid_nc, patch):
+    """Topological-defect (nEdgesOnCell != 6) audit by region.
+
+    A variable-resolution JIGSAW mesh is a general centroidal-Voronoi mesh, not the
+    icosahedral SCVT (which has exactly 12 pentagons). Report the non-hexagonal
+    fraction overall and per region (core/transition/far by great-circle distance
+    from the patch centre), which is the matched-CVT design's defect measure.
+    """
+    with nc.Dataset(grid_nc) as ds:
+        ne = np.asarray(ds.variables["nEdgesOnCell"][:])
+        lat = np.degrees(np.asarray(ds.variables["latCell"][:]))
+        lon = np.degrees(np.asarray(ds.variables["lonCell"][:]))
+    d = great_circle_deg(lat, lon, patch["lat0"], patch["lon0"])
+    region = np.where(d <= patch["r_in_deg"], "core",
+                      np.where(d < patch["r_out_deg"], "transition", "far"))
+    nonhex = ne != 6
+    out = {"nCells": int(ne.size), "n_nonhex": int(nonhex.sum()),
+           "nonhex_frac": round(float(nonhex.mean()), 4),
+           "edge_hist": {int(k): int(v) for k, v in zip(*np.unique(ne, return_counts=True))}}
+    for r in ("core", "transition", "far"):
+        sel = region == r
+        out[f"{r}_nonhex_frac"] = round(float(nonhex[sel].mean()), 4) if sel.any() else None
+        out[f"{r}_nCells"] = int(sel.sum())
+    return out
+
+
 def setup_vr_mesh(args, label):
-    sizes = VR_MESHES[label]
+    sizes = ALL_MESHES[label]
     patch = dict(lat0=args.lat0, lon0=args.lon0, r_in_deg=args.r_in_deg, r_out_deg=args.r_out_deg)
     run_root = args.run_root.expanduser().resolve()
     bundle = run_root / "meshes" / label
     work = run_root / "mesh_scratch" / label
     bundle.mkdir(parents=True, exist_ok=True)
-    print(f"{label}: generating VR mesh fine={sizes['fine_km']} coarse={sizes['coarse_km']} km")
+    kind = "uniform-CVT" if sizes["fine_km"] == sizes["coarse_km"] else "VR"
+    print(f"{label}: generating {kind} mesh fine={sizes['fine_km']} coarse={sizes['coarse_km']} km")
     generate_vr_mesh(bundle, work, fine_km=sizes["fine_km"], coarse_km=sizes["coarse_km"],
                      patch=patch, dlat_deg=args.dlat_deg, earth_radius=args.earth_radius,
                      plot_cell_width=args.plot_cell_width, force=args.force)
@@ -109,24 +146,14 @@ def setup_vr_mesh(args, label):
         if not init_model.exists():
             raise FileNotFoundError(f"init model does not exist: {init_model}")
         a2.run_init_atmosphere(bundle, init_model, args.ranks, args.mpiexec, args.force)
-    # Pentagon-vs-patch audit
-    pidx, plat, plon = find_pentagons(bundle / "grid.nc")
-    pdist = great_circle_deg(plat, plon, patch["lat0"], patch["lon0"])
-    with nc.Dataset(bundle / "grid.nc") as ds:
-        n_cells = len(ds.dimensions["nCells"])
-    return {
-        "mesh": label, **sizes, **patch, "nCells": n_cells,
-        "n_pentagons": int(len(pidx)),
-        "pentagon_dist_deg": [round(float(x), 3) for x in np.sort(pdist)],
-        "pentagons_in_transition": int(np.sum((pdist > patch["r_in_deg"]) & (pdist < patch["r_out_deg"]))),
-        "bundle": str(bundle),
-    }
+    return {"mesh": label, "kind": kind, **sizes, **patch,
+            **defect_audit(bundle / "grid.nc", patch), "bundle": str(bundle)}
 
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--run-root", type=pathlib.Path, required=True)
-    p.add_argument("--mesh-list", nargs="+", default=["vr_480_120"], choices=list(VR_MESHES))
+    p.add_argument("--mesh-list", nargs="+", default=["vr_480_120"], choices=list(ALL_MESHES))
     p.add_argument("--ranks", type=int, default=8)
     p.add_argument("--init-model", type=pathlib.Path, default=pathlib.Path("./init_atmosphere_model"))
     p.add_argument("--mpiexec", default="mpiexec")
@@ -150,15 +177,21 @@ def main(argv=None):
     for sub in ("meshes", "runs", "results"):
         (run_root / sub).mkdir(parents=True, exist_ok=True)
     summaries = [setup_vr_mesh(args, label) for label in args.mesh_list]
-    manifest = {"mesh_type": "variable_circular", "earth_radius_m": args.earth_radius,
+    manifest = {"mesh_type": "tier_c_matched_cvt", "earth_radius_m": args.earth_radius,
                 "ztop_m": args.ztop, "patch": {k: getattr(args, k) for k in
                 ("lat0", "lon0", "r_in_deg", "r_out_deg", "dlat_deg")}, "meshes": summaries}
     path = run_root / "mesh_manifest.json"
+    # merge with any existing manifest so separate runs accumulate
+    if path.exists():
+        prev = json.loads(path.read_text())
+        have = {m["mesh"] for m in summaries}
+        manifest["meshes"] = [m for m in prev.get("meshes", []) if m["mesh"] not in have] + summaries
     path.write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Wrote {path}")
     for s in summaries:
-        print(f"{s['mesh']}: nCells={s['nCells']} pentagons={s['n_pentagons']} "
-              f"in_transition={s['pentagons_in_transition']} dists={s['pentagon_dist_deg'][:3]}…")
+        print(f"{s['mesh']} ({s['kind']}): nCells={s['nCells']} non-hex={s['n_nonhex']} "
+              f"({100*s['nonhex_frac']:.1f}%)  core/trans/far non-hex="
+              f"{s.get('core_nonhex_frac')}/{s.get('transition_nonhex_frac')}/{s.get('far_nonhex_frac')}")
     return 0
 
 
