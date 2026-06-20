@@ -10,8 +10,9 @@ INCLUDES := -I$(MPAS_ROOT)/src/framework -I$(MPAS_ROOT)/src/operators -I..
 LIBS := $(MPAS_ROOT)/src/operators/libops.a $(MPAS_ROOT)/src/framework/libframework.a
 ELECTROSTATIC_OBJS = ../mpas_electrostatic_bcs.o
 MMS_OBJS = ../mpas_electrostatic_source.o ../mpas_electrostatic_benchmarks.o
+REMAP_OBJS = ../mpas_electrostatic_vertical_remap.o
 
-TESTS = test_elliptic_operator test_pcg_solver test_mms_source test_e_reconstruction
+TESTS = test_elliptic_operator test_pcg_solver test_mms_source test_e_reconstruction test_vertical_remap
 
 all: $(TESTS)
 
@@ -26,6 +27,9 @@ test_mms_source: test_mms_source.F90
 
 test_e_reconstruction: test_e_reconstruction.F90 $(ELECTROSTATIC_OBJS) $(LIBS)
 	$(FC) $(FFLAGS) $(INCLUDES) -o $@ test_e_reconstruction.F90 $(ELECTROSTATIC_OBJS) $(LIBS)
+
+test_vertical_remap: test_vertical_remap.F90 $(REMAP_OBJS) $(LIBS)
+	$(FC) $(FFLAGS) $(INCLUDES) -o $@ test_vertical_remap.F90 $(REMAP_OBJS) $(LIBS)
 
 clean:
 	$(RM) $(TESTS) *.o *.mod

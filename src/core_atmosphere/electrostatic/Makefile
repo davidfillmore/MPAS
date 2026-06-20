@@ -8,7 +8,8 @@ FFLAGS ?= -O0 -g -fconvert=big-endian -ffree-form -fdefault-real-8 -fdefault-dou
 OBJS = mpas_electrostatic_benchmarks.o \
        mpas_electrostatic_bcs.o \
        mpas_electrostatic_driver.o \
-       mpas_electrostatic_source.o
+       mpas_electrostatic_source.o \
+       mpas_electrostatic_vertical_remap.o
 
 all: $(OBJS)
 
