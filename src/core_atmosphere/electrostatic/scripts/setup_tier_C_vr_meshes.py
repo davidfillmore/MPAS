@@ -67,3 +67,100 @@ def find_pentagons(grid_nc):
         lon = np.degrees(np.asarray(ds.variables["lonCell"][:]))
     idx = np.where(ne == 5)[0]
     return idx, lat[idx], lon[idx]
+
+
+def generate_vr_mesh(bundle_dir, work_dir, *, fine_km, coarse_km, patch, dlat_deg,
+                     earth_radius, plot_cell_width, force):
+    """Generate grid.nc + graph.info for one VR mesh via build_spherical_mesh."""
+    from mpas_tools.mesh.creation.build_mesh import build_spherical_mesh
+    grid, graph = bundle_dir / "grid.nc", bundle_dir / "graph.info"
+    if grid.exists() and graph.exists() and not force:
+        return
+    work_dir.mkdir(parents=True, exist_ok=True)
+    a2.clean_generated_mesh_files(work_dir)
+    cw, lon, lat = build_cell_width_grid(fine_km=fine_km, coarse_km=coarse_km,
+                                         dlat_deg=dlat_deg, **patch)
+    prev = pathlib.Path.cwd()
+    try:
+        os.chdir(work_dir)
+        build_spherical_mesh(cw, lon, lat, earth_radius=earth_radius,
+                             out_filename="base_mesh.nc", plot_cellWidth=plot_cell_width)
+    finally:
+        os.chdir(prev)
+    shutil.copy2(work_dir / "base_mesh.nc", grid)
+    shutil.copy2(work_dir / "graph.info", graph)
+
+
+def setup_vr_mesh(args, label):
+    sizes = VR_MESHES[label]
+    patch = dict(lat0=args.lat0, lon0=args.lon0, r_in_deg=args.r_in_deg, r_out_deg=args.r_out_deg)
+    run_root = args.run_root.expanduser().resolve()
+    bundle = run_root / "meshes" / label
+    work = run_root / "mesh_scratch" / label
+    bundle.mkdir(parents=True, exist_ok=True)
+    print(f"{label}: generating VR mesh fine={sizes['fine_km']} coarse={sizes['coarse_km']} km")
+    generate_vr_mesh(bundle, work, fine_km=sizes["fine_km"], coarse_km=sizes["coarse_km"],
+                     patch=patch, dlat_deg=args.dlat_deg, earth_radius=args.earth_radius,
+                     plot_cell_width=args.plot_cell_width, force=args.force)
+    a2.write_bundle_inputs(bundle, args.nvertlevels, args.ztop, args.force)
+    a2.partition_mesh(bundle, args.ranks, args.force)
+    if not args.mesh_only:
+        init_model = args.init_model.expanduser().resolve()
+        if not init_model.exists():
+            raise FileNotFoundError(f"init model does not exist: {init_model}")
+        a2.run_init_atmosphere(bundle, init_model, args.ranks, args.mpiexec, args.force)
+    # Pentagon-vs-patch audit
+    pidx, plat, plon = find_pentagons(bundle / "grid.nc")
+    pdist = great_circle_deg(plat, plon, patch["lat0"], patch["lon0"])
+    with nc.Dataset(bundle / "grid.nc") as ds:
+        n_cells = len(ds.dimensions["nCells"])
+    return {
+        "mesh": label, **sizes, **patch, "nCells": n_cells,
+        "n_pentagons": int(len(pidx)),
+        "pentagon_dist_deg": [round(float(x), 3) for x in np.sort(pdist)],
+        "pentagons_in_transition": int(np.sum((pdist > patch["r_in_deg"]) & (pdist < patch["r_out_deg"]))),
+        "bundle": str(bundle),
+    }
+
+
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--run-root", type=pathlib.Path, required=True)
+    p.add_argument("--mesh-list", nargs="+", default=["vr_480_120"], choices=list(VR_MESHES))
+    p.add_argument("--ranks", type=int, default=8)
+    p.add_argument("--init-model", type=pathlib.Path, default=pathlib.Path("./init_atmosphere_model"))
+    p.add_argument("--mpiexec", default="mpiexec")
+    p.add_argument("--nvertlevels", type=int, default=16)
+    p.add_argument("--ztop", type=float, default=20000.0)
+    p.add_argument("--earth-radius", type=float, default=EARTH_RADIUS_M)
+    p.add_argument("--dlat-deg", type=float, default=1.0)
+    p.add_argument("--lat0", type=float, default=DEFAULT_PATCH["lat0"])
+    p.add_argument("--lon0", type=float, default=DEFAULT_PATCH["lon0"])
+    p.add_argument("--r-in-deg", type=float, default=DEFAULT_PATCH["r_in_deg"])
+    p.add_argument("--r-out-deg", type=float, default=DEFAULT_PATCH["r_out_deg"])
+    p.add_argument("--mesh-only", action="store_true")
+    p.add_argument("--plot-cell-width", action="store_true")
+    p.add_argument("--force", action="store_true")
+    return p.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    run_root = args.run_root.expanduser().resolve()
+    for sub in ("meshes", "runs", "results"):
+        (run_root / sub).mkdir(parents=True, exist_ok=True)
+    summaries = [setup_vr_mesh(args, label) for label in args.mesh_list]
+    manifest = {"mesh_type": "variable_circular", "earth_radius_m": args.earth_radius,
+                "ztop_m": args.ztop, "patch": {k: getattr(args, k) for k in
+                ("lat0", "lon0", "r_in_deg", "r_out_deg", "dlat_deg")}, "meshes": summaries}
+    path = run_root / "mesh_manifest.json"
+    path.write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"Wrote {path}")
+    for s in summaries:
+        print(f"{s['mesh']}: nCells={s['nCells']} pentagons={s['n_pentagons']} "
+              f"in_transition={s['pentagons_in_transition']} dists={s['pentagon_dist_deg'][:3]}…")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
