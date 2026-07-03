@@ -62,14 +62,23 @@ def terrain_section(fields, section_mode, core_half_width_km):
     raise ValueError(f"Unsupported section mode {section_mode!r}")
 
 
-def overlay_terrain(ax, terrain):
+def overlay_terrain(ax, terrain, *, base=0.0):
     y_km = np.asarray(terrain["terrain_y"], dtype=float) * KM_PER_M
     z_km = np.asarray(terrain["terrain_z"], dtype=float) * KM_PER_M
     order = np.argsort(y_km)
     y_km = y_km[order]
     z_km = z_km[order]
-    ax.fill_between(y_km, 0.0, z_km, color=TERRAIN_FILL_COLOR, alpha=0.35, linewidth=0.0)
-    (line,) = ax.plot(y_km, z_km, color=TERRAIN_LINE_COLOR, linewidth=1.4, label="Terrain")
+    # Opaque solid fill from the axis floor up to the terrain surface, drawn on
+    # top (high zorder) so it conceals the water/charge/potential contours and
+    # the field-line streamlines beneath the ground. Those sub-surface samples
+    # are interpolation across the terrain-following grid, not physical values:
+    # the solver grounds everything below the terrain, so nothing there is real.
+    ax.fill_between(
+        y_km, base, z_km, color=TERRAIN_FILL_COLOR, alpha=1.0, linewidth=0.0, zorder=10
+    )
+    (line,) = ax.plot(
+        y_km, z_km, color=TERRAIN_LINE_COLOR, linewidth=1.4, label="Terrain", zorder=11
+    )
     return line
 
 
@@ -180,14 +189,16 @@ def plot_terrain_charge_coupled_output(
     axes[1].set_title(base.RIGHT_PANEL_TITLE, pad=8)
     base.style_section_axis(axes[1])
 
-    for ax in axes:
-        overlay_terrain(ax, terrain)
-
     zmin = min(float(np.nanmin(z_km)), float(np.nanmin(terrain["terrain_z"]) * KM_PER_M), 0.0)
     zmax = float(np.nanmax(z_km))
     for ax in axes:
         ax.set_xlim(float(np.nanmin(y_km)), float(np.nanmax(y_km)))
         ax.set_ylim(zmin, zmax)
+
+    # Draw the opaque terrain last, filling from the axis floor to the surface,
+    # so it conceals every contour and field line beneath the ground.
+    for ax in axes:
+        overlay_terrain(ax, terrain, base=zmin)
 
     plot_path = pathlib.Path(plot_path).expanduser()
     plot_path.parent.mkdir(parents=True, exist_ok=True)
