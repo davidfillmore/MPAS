@@ -24,6 +24,7 @@ module mpas_electrostatic_vertical_remap
    public :: electrostatic_interp_w_to_poisson_mid
    public :: electrostatic_build_poisson_grid
    public :: electrostatic_build_poisson_fv_weights
+   public :: electrostatic_remap_rho_conservative
 
 contains
 
@@ -178,6 +179,60 @@ contains
       end do
 
    end subroutine electrostatic_build_poisson_fv_weights
+
+!***********************************************************************
+!
+!  routine electrostatic_remap_rho_conservative
+!
+!> \brief Conservatively remap cell-centered charge density to Poisson bands
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_remap_rho_conservative(nCells, nVertLevels, zgridMpas, zFaceP, zGround, &
+                                                   kFirstActive, active, airThickness, rhoMpas, rhoP)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nVertLevels+1,nCells), intent(in) :: zgridMpas
+      real(kind=RKIND), dimension(nVertLevels+1), intent(in) :: zFaceP
+      real(kind=RKIND), dimension(nCells), intent(in) :: zGround
+      integer, dimension(nCells), intent(in) :: kFirstActive
+      logical, dimension(nVertLevels,nCells), intent(in) :: active
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: airThickness
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: rhoMpas
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: rhoP
+
+      integer :: iCell, k, m
+      real(kind=RKIND) :: lo, hi, olo, ohi, acc
+
+      rhoP = 0.0_RKIND
+
+      do iCell = 1, nCells
+         m = 1
+         do k = 1, nVertLevels
+            if (.not. active(k,iCell) .or. airThickness(k,iCell) <= 0.0_RKIND) cycle
+
+            lo = zFaceP(k)
+            if (k == kFirstActive(iCell)) lo = zGround(iCell)
+            hi = zFaceP(k+1)
+
+            do while (m > 1 .and. zgridMpas(m,iCell) > lo)
+               m = m - 1
+            end do
+
+            acc = 0.0_RKIND
+            do while (m <= nVertLevels)
+               olo = max(lo, zgridMpas(m,iCell))
+               ohi = min(hi, zgridMpas(m+1,iCell))
+               if (ohi > olo) acc = acc + rhoMpas(m,iCell) * (ohi - olo)
+               if (zgridMpas(m+1,iCell) >= hi) exit
+               m = m + 1
+            end do
+
+            rhoP(k,iCell) = acc / airThickness(k,iCell)
+         end do
+      end do
+
+   end subroutine electrostatic_remap_rho_conservative
 
 !***********************************************************************
 !

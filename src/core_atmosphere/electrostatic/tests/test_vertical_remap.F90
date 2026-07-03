@@ -4,7 +4,8 @@ program test_vertical_remap
    use mpas_electrostatic_vertical_remap, only : electrostatic_interp_mpas_to_poisson, &
                                                 electrostatic_interp_w_to_poisson_mid, &
                                                 electrostatic_build_poisson_grid, &
-                                                electrostatic_build_poisson_fv_weights
+                                                electrostatic_build_poisson_fv_weights, &
+                                                electrostatic_remap_rho_conservative
 
    implicit none
 
@@ -14,6 +15,8 @@ program test_vertical_remap
    call test_build_poisson_grid_flat_matches_current_operator()
    call test_build_poisson_grid_terrain_clipping_and_sliver_merge()
    call test_build_poisson_fv_weights_shaved_and_grounded()
+   call test_conservative_remap_preserves_column_charge()
+   call test_conservative_remap_clipped_column()
    print *, "PASS: vertical remap tests"
 
 contains
@@ -153,5 +156,63 @@ contains
       if (abs(sum(h_weight(:,1)) + 0.5_RKIND*sum(diag_extra(:,1)) - 3.0_RKIND) > 1.0e-12_RKIND) &
          stop "FAIL: face partition does not tile the air column"
    end subroutine test_build_poisson_fv_weights_shaved_and_grounded
+
+   subroutine test_conservative_remap_preserves_column_charge()
+      integer, parameter :: nCells = 1, nVertLevels = 4
+      real(kind=RKIND) :: zgridMpas(nVertLevels+1,nCells), zFaceP(nVertLevels+1)
+      real(kind=RKIND) :: zGround(nCells), airThickness(nVertLevels,nCells)
+      real(kind=RKIND) :: rhoMpas(nVertLevels,nCells), rhoP(nVertLevels,nCells)
+      logical :: active(nVertLevels,nCells)
+      integer :: kFirst(nCells)
+      real(kind=RKIND) :: qMpas, qP
+      integer :: k
+
+      zgridMpas(:,1) = [1.0_RKIND, 2.2_RKIND, 4.0_RKIND, 6.4_RKIND, 9.0_RKIND]
+      rhoMpas(:,1) = [3.0_RKIND, -1.0_RKIND, 2.0_RKIND, 0.5_RKIND]
+      do k = 1, nVertLevels + 1
+         zFaceP(k) = 1.0_RKIND + 2.0_RKIND * real(k-1, kind=RKIND)
+      end do
+      zGround = 1.0_RKIND
+      kFirst = 1
+      active(:,1) = .true.
+      airThickness(:,1) = 2.0_RKIND
+
+      call electrostatic_remap_rho_conservative(nCells, nVertLevels, zgridMpas, zFaceP, zGround, &
+                                                kFirst, active, airThickness, rhoMpas, rhoP)
+
+      qMpas = 0.0_RKIND
+      do k = 1, nVertLevels
+         qMpas = qMpas + rhoMpas(k,1) * (zgridMpas(k+1,1) - zgridMpas(k,1))
+      end do
+      qP = sum(rhoP(:,1) * airThickness(:,1))
+      if (abs(qP - qMpas) > 1.0e-13_RKIND * abs(qMpas)) stop "FAIL: column charge not conserved"
+   end subroutine test_conservative_remap_preserves_column_charge
+
+   subroutine test_conservative_remap_clipped_column()
+      integer, parameter :: nCells = 1, nVertLevels = 2
+      real(kind=RKIND) :: zgridMpas(nVertLevels+1,nCells), zFaceP(nVertLevels+1)
+      real(kind=RKIND) :: zGround(nCells), airThickness(nVertLevels,nCells)
+      real(kind=RKIND) :: rhoMpas(nVertLevels,nCells), rhoP(nVertLevels,nCells)
+      logical :: active(nVertLevels,nCells)
+      integer :: kFirst(nCells)
+      real(kind=RKIND) :: qMpas, qP
+
+      zgridMpas(:,1) = [3.0_RKIND, 5.0_RKIND, 8.0_RKIND]
+      rhoMpas(:,1) = [4.0_RKIND, 1.0_RKIND]
+      zFaceP = [0.0_RKIND, 4.0_RKIND, 8.0_RKIND]
+      zGround = 3.0_RKIND
+      kFirst = 2
+      active(:,1) = [.false., .true.]
+      airThickness(:,1) = [0.0_RKIND, 5.0_RKIND]
+
+      call electrostatic_remap_rho_conservative(nCells, nVertLevels, zgridMpas, zFaceP, zGround, &
+                                                kFirst, active, airThickness, rhoMpas, rhoP)
+
+      if (abs(rhoP(2,1) - 2.2_RKIND) > 1.0e-13_RKIND) stop "FAIL: extended kFirst band mean"
+      if (abs(rhoP(1,1)) > 0.0_RKIND) stop "FAIL: buried level must carry no charge"
+      qMpas = 4.0_RKIND * 2.0_RKIND + 1.0_RKIND * 3.0_RKIND
+      qP = sum(rhoP(:,1) * airThickness(:,1))
+      if (abs(qP - qMpas) > 1.0e-13_RKIND * qMpas) stop "FAIL: clipped-column conservation"
+   end subroutine test_conservative_remap_clipped_column
 
 end program test_vertical_remap
