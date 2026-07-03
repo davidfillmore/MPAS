@@ -21,6 +21,7 @@ module mpas_electrostatic_bcs
    save
 
    public :: electrostatic_apply_ground_rhs
+   public :: electrostatic_compute_edge_normal_E
    public :: electrostatic_compute_vertical_E
    public :: electrostatic_horizontal_metric_scale
 
@@ -66,6 +67,57 @@ contains
       end do
 
    end subroutine electrostatic_apply_ground_rhs
+
+!***********************************************************************
+!
+!  routine electrostatic_compute_edge_normal_E
+!
+!> \brief Compute lateral edge-normal E from cell-centered potential
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_compute_edge_normal_E(nCells, nEdges, nVertLevels, cellsOnEdge, dcEdge, &
+                                                  length_scale, phi_ground, active, phi, E_normal)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nEdges
+      integer, intent(in) :: nVertLevels
+      integer, dimension(2,nEdges), intent(in) :: cellsOnEdge
+      real(kind=RKIND), dimension(nEdges), intent(in) :: dcEdge
+      real(kind=RKIND), intent(in) :: length_scale
+      real(kind=RKIND), intent(in) :: phi_ground
+      logical, dimension(nVertLevels,nCells), intent(in) :: active
+      real(kind=RKIND), dimension(nVertLevels,*), intent(in) :: phi
+      real(kind=RKIND), dimension(nVertLevels,nEdges), intent(out) :: E_normal
+
+      integer :: iEdge, cell1, cell2, k
+      real(kind=RKIND) :: dcMetric
+
+      E_normal = 0.0_RKIND
+
+      do iEdge = 1, nEdges
+         cell1 = cellsOnEdge(1,iEdge)
+         cell2 = cellsOnEdge(2,iEdge)
+         dcMetric = dcEdge(iEdge) * length_scale
+         if (cell1 < 1 .or. cell1 > nCells .or. cell2 < 1 .or. cell2 > nCells) cycle
+         if (dcMetric <= 0.0_RKIND) cycle
+         do k = 1, nVertLevels
+            if (active(k,cell1) .and. active(k,cell2)) then
+               ! open face: central difference along the cell1 -> cell2 normal
+               E_normal(k,iEdge) = -(phi(k,cell2) - phi(k,cell1)) / dcMetric
+            else if (active(k,cell1)) then
+               ! cell2 buried: grounded wall at the face midpoint, dc/2 from
+               ! cell1 (the operator's wall model) -- never the buried cell's
+               ! identity-row placeholder
+               E_normal(k,iEdge) = -(phi_ground - phi(k,cell1)) / (0.5_RKIND * dcMetric)
+            else if (active(k,cell2)) then
+               ! cell1 buried: the wall sits dc/2 before cell2's center
+               E_normal(k,iEdge) = -(phi(k,cell2) - phi_ground) / (0.5_RKIND * dcMetric)
+            end if
+            ! both buried: rock-to-rock face, E stays 0
+         end do
+      end do
+
+   end subroutine electrostatic_compute_edge_normal_E
 
 !***********************************************************************
 !

@@ -26,6 +26,7 @@ module mpas_electrostatic_driver
    use mpas_elliptic_operator, only : mpas_elliptic_operator_type, elliptic_operator_init_from_weights
    use mpas_pcg_solver, only : mpas_pcg_solver_type, pcg_init, PC_NONE, PC_JACOBI
    use mpas_electrostatic_bcs, only : electrostatic_apply_ground_rhs, &
+                                      electrostatic_compute_edge_normal_E, &
                                       electrostatic_compute_vertical_E, &
                                       electrostatic_horizontal_metric_scale
    use mpas_electrostatic_source, only : electrostatic_fill_mms_cart_source, &
@@ -1185,8 +1186,9 @@ contains
       call mpas_pool_get_array(es_pool, 'E_vector', E_vector)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_bc_ground', phi_ground)
 
-      call compute_edge_normal_E(nEdges, nVertLevels, cellsOnEdge, dcEdge, &
-                                 state_ptr % horizontal_length_scale, phi, E_normal)
+      call electrostatic_compute_edge_normal_E(nCells, nEdges, nVertLevels, cellsOnEdge, dcEdge, &
+                                               state_ptr % horizontal_length_scale, phi_ground, &
+                                               state_ptr % active, phi, E_normal)
 
       call mpas_reconstruct(mesh_pool, E_normal, state_ptr % E_x, state_ptr % E_y, state_ptr % E_z, &
                             state_ptr % E_zonal, state_ptr % E_meridional, includeHalos=.false.)
@@ -1250,41 +1252,6 @@ contains
       end if
 
    end subroutine postprocess_block_E
-
-!***********************************************************************
-!
-!  routine compute_edge_normal_E
-!
-!> \brief Compute lateral edge-normal E from cell-centered potential
-!
-!-----------------------------------------------------------------------
-   subroutine compute_edge_normal_E(nEdges, nVertLevels, cellsOnEdge, dcEdge, length_scale, phi, E_normal)
-
-      integer, intent(in) :: nEdges
-      integer, intent(in) :: nVertLevels
-      integer, dimension(2,nEdges), intent(in) :: cellsOnEdge
-      real(kind=RKIND), dimension(nEdges), intent(in) :: dcEdge
-      real(kind=RKIND), intent(in) :: length_scale
-      real(kind=RKIND), dimension(nVertLevels,*), intent(in) :: phi
-      real(kind=RKIND), dimension(nVertLevels,nEdges), intent(out) :: E_normal
-
-      integer :: iEdge, cell1, cell2, k
-      real(kind=RKIND) :: dcMetric
-
-      E_normal = 0.0_RKIND
-
-      do iEdge = 1, nEdges
-         cell1 = cellsOnEdge(1,iEdge)
-         cell2 = cellsOnEdge(2,iEdge)
-         dcMetric = dcEdge(iEdge) * length_scale
-         if (cell1 > 0 .and. cell2 > 0 .and. dcMetric > 0.0_RKIND) then
-            do k = 1, nVertLevels
-               E_normal(k,iEdge) = -(phi(k,cell2) - phi(k,cell1)) / dcMetric
-            end do
-         end if
-      end do
-
-   end subroutine compute_edge_normal_E
 
 !***********************************************************************
 !

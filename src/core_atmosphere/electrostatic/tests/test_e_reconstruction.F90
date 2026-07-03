@@ -2,6 +2,7 @@ program test_e_reconstruction
 
    use mpas_kind_types, only : RKIND
    use mpas_electrostatic_bcs, only : electrostatic_apply_ground_rhs, &
+                                      electrostatic_compute_edge_normal_E, &
                                       electrostatic_compute_vertical_E, &
                                       electrostatic_horizontal_metric_scale
    use mpas_elliptic_operator, only : mpas_elliptic_operator_type, elliptic_operator_init_from_weights
@@ -13,6 +14,7 @@ program test_e_reconstruction
    call test_vertical_e_ground_second_order_and_top_neumann()
    call test_ground_rhs_only_modifies_bottom_level()
    call test_grounded_walls_admit_uniform_phi_ground()
+   call test_edge_normal_e_wall_consistent_and_antisymmetric()
    call test_horizontal_metric_scale_respects_mesh_geometry()
    print *, "PASS: E reconstruction tests"
 
@@ -162,6 +164,45 @@ contains
       if (maxval(abs(Ax - rhs)) > 1.0e-12_RKIND) stop "FAIL: phi==phi_ground is not an equilibrium"
       call op % destroy()
    end subroutine test_grounded_walls_admit_uniform_phi_ground
+
+   subroutine test_edge_normal_e_wall_consistent_and_antisymmetric()
+      integer, parameter :: nCells = 2, nEdges = 1, nVertLevels = 3
+      integer :: cellsOnEdge(2,nEdges)
+      real(kind=RKIND) :: dcEdge(nEdges)
+      real(kind=RKIND) :: phi(nVertLevels,nCells)
+      real(kind=RKIND) :: E_normal(nVertLevels,nEdges), E_swapped(nVertLevels,nEdges)
+      logical :: active(nVertLevels,nCells)
+      real(kind=RKIND), parameter :: phi_ground = 5.0_RKIND
+
+      ! cell 2's level 1 is buried (identity row, placeholder phi = 0);
+      ! level 3 has both cells buried; dc = 2 so the wall distance is 1
+      cellsOnEdge(:,1) = [1, 2]
+      dcEdge = 2.0_RKIND
+      active(:,1) = [.true., .true., .false.]
+      active(:,2) = [.false., .true., .false.]
+      phi(:,1) = [7.0_RKIND, 8.0_RKIND, 0.0_RKIND]
+      phi(:,2) = [0.0_RKIND, 6.0_RKIND, 0.0_RKIND]
+
+      call electrostatic_compute_edge_normal_E(nCells, nEdges, nVertLevels, cellsOnEdge, dcEdge, &
+                                               1.0_RKIND, phi_ground, active, phi, E_normal)
+
+      ! open face: central difference over dc (unchanged flat formula)
+      if (abs(E_normal(2,1) - 1.0_RKIND) > 1.0e-14_RKIND) &
+         stop "FAIL: open-face central difference"
+      ! cut edge: grounded wall at dc/2 -> -(phi_ground - phi1)/(dc/2) = -(5-7)/1 = 2,
+      ! never the buried placeholder (old code gave -(0-7)/2 = 3.5)
+      if (abs(E_normal(1,1) - 2.0_RKIND) > 1.0e-14_RKIND) &
+         stop "FAIL: wall-consistent one-sided E at cut edge"
+      ! both buried: no field
+      if (abs(E_normal(3,1)) > 0.0_RKIND) stop "FAIL: buried-buried edge must carry no E"
+
+      ! orientation antisymmetry: swapping cellsOnEdge flips every level's sign
+      cellsOnEdge(:,1) = [2, 1]
+      call electrostatic_compute_edge_normal_E(nCells, nEdges, nVertLevels, cellsOnEdge, dcEdge, &
+                                               1.0_RKIND, phi_ground, active, phi, E_swapped)
+      if (maxval(abs(E_swapped + E_normal)) > 1.0e-14_RKIND) &
+         stop "FAIL: edge-normal E not antisymmetric under orientation swap"
+   end subroutine test_edge_normal_e_wall_consistent_and_antisymmetric
 
    subroutine test_horizontal_metric_scale_respects_mesh_geometry()
       real(kind=RKIND), parameter :: radius = 6371229.0_RKIND
