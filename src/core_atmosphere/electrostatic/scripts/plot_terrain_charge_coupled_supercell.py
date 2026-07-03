@@ -14,11 +14,12 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import plot_charge_coupled_supercell as base  # noqa: E402
+import plot_style  # noqa: E402
 import run_tripole_supercell as tripole  # noqa: E402
 
 KM_PER_M = base.KM_PER_M
-TERRAIN_LINE_COLOR = "#4a2c16"
-TERRAIN_FILL_COLOR = "#b58b5b"
+TERRAIN_LINE_COLOR = plot_style.NCAR_COLORS["gray"]
+TERRAIN_FILL_COLOR = plot_style.NCAR_COLORS["light_gray"]
 
 
 def terrain_slice_section(fields):

@@ -73,6 +73,12 @@ class TerrainChargeCoupledSupercellPlotTests(unittest.TestCase):
             self.assertTrue(plot.exists())
             self.assertGreater(plot.stat().st_size, 0)
 
+    def test_terrain_overlay_uses_ncar_palette(self):
+        script = load_script()
+
+        self.assertEqual(script.TERRAIN_LINE_COLOR, script.plot_style.NCAR_COLORS["gray"])
+        self.assertEqual(script.TERRAIN_FILL_COLOR, script.plot_style.NCAR_COLORS["light_gray"])
+
 
 def synthetic_fields():
     return {
