@@ -54,12 +54,29 @@ scales to this use case without structural modification.
 ## Terrain-following vertical coordinate
 
 MPAS-A's operational vertical coordinate is terrain-following.
-The flat-terrain assumption of [](discretization.md) restricts
-Phase 1 benchmarks to meshes with
-$z_{\mathrm{g}}(\boldsymbol{x}_h) = 0$. The generalization to
-terrain-following requires the addition of cross-derivative metric
-terms to the Laplacian; this is a straightforward but nontrivial
-extension planned for Phase 2.
+The Phase-2 terrain path avoids solving directly in the
+terrain-following coordinate: when
+`config_electrostatic_terrain_mode = 'zgrid'`, charge is
+conservatively remapped from MPAS layers to a uniform altitude
+grid, Poisson is solved on that grid, and the potential and
+electric field are remapped back to MPAS midpoints. The terrain
+boundary is represented by per-column active altitude bands, an
+exact cut-bottom Dirichlet distance to the local ground height,
+and shaved lateral faces: open air-air overlap carries the
+horizontal flux while air-rock overlap is a grounded wall
+contribution on the diagonal. This preserves the symmetric
+positive-definite operator used by PCG and avoids cross-derivative
+metric terms in the first terrain implementation.
+
+The end-to-end terrain MMS gate uses combined horizontal/vertical
+refinement over a cosine hill. The 1000 m gentle-hill hard gate
+passes with interior relative-$L^2$ finest-two slope 1.978
+(`15km:K25 -> 7.5km:K50 -> 3.75km:K100`, final residuals below
+$10^{-8}$). The 6000 m steep-hill soft case reports slope 0.921,
+so steep-terrain near-surface potential and electric-field output
+should be treated as first-order until the deferred cut-cell
+upgrade adds cross-level open-strip coupling instead of grounding
+that strip.
 
 ## Larger problems: algebraic multigrid
 

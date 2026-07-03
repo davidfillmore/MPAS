@@ -14,11 +14,14 @@ provides three primary horizontal metrics at each edge $e$:
   either side of edge $e$;
 - and, at each cell $i$, $A_i =$ `areaCell`: the cell area.
 
-We assume the layered-vertical coordinate is flat ($z$-levels
-rather than terrain-following) so that the 3D cell volume factors
-as $V_{i,k} = A_i \cdot \Delta z_k$ with $\Delta z_k$ the
-thickness of layer $k$. The generalization to terrain-following
-coordinates is deferred and discussed in [](discussion.md).
+The base discretization assumes the layered-vertical coordinate is
+flat ($z$-levels rather than terrain-following) so that the 3D
+cell volume factors as $V_{i,k} = A_i \cdot \Delta z_k$ with
+$\Delta z_k$ the thickness of layer $k$. Terrain-following meshes
+can instead use the uniform-altitude `zgrid` remap mode described
+in [](discussion.md), where the operator is assembled from
+precomputed active-band finite-volume weights rather than the
+single layer thickness used below.
 
 Layer $k$ indices run from $k = 1$ (the ground-adjacent layer) to
 $k = K$ (the model-top layer). Layer-midpoint altitude is
