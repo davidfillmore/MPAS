@@ -6,6 +6,9 @@ copyright = "2026, David Fillmore"
 
 master_doc = "index"
 
+# Number figures so :numref: cross-references resolve (e.g. "Fig. 1").
+numfig = True
+
 extensions = [
     "myst_parser",
     "sphinx.ext.mathjax",

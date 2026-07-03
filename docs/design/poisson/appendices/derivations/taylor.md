@@ -183,4 +183,4 @@ Global $L^{2}$ convergence persists via supraconvergence under
 modest regularity assumptions, but the rate may be reduced. The
 empirical behaviour on MPAS-A meshes is quantified in the
 mesh-sensitivity verification plan
-([](../../verification-plan/tier-c-mesh.md)).
+([](../../mesh-sensitivity.md)).

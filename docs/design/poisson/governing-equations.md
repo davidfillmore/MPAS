@@ -73,11 +73,10 @@ unique solution $\varphi$ for any admissible $\rho$.
 
 The space-charge density $\rho$ is supplied externally to the
 Poisson solver. In the idealized-physics configurations used for
-the benchmarks of Tier A
-([](verification-plan/tier-a-mms.md)) and Tier B
-([](verification-plan/tier-b-idealized.md)), $\rho$ is an analytic
-function of position. In the end-to-end supercell configuration of
-Tier E ([](verification-plan/tier-e-showcase.md)), $\rho$ is
+the benchmarks of [](verification.md) and
+[](idealized-applications.md), $\rho$ is an analytic
+function of position. In the end-to-end supercell configuration
+([](end-to-end-supercell.md)), $\rho$ is
 produced by a lightweight electrification stub that parameterizes
 charge separation as proportional to vertical velocity and to
 hydrometeor mass mixing ratios. When graupel and cloud ice are
