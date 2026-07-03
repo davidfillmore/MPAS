@@ -250,6 +250,15 @@ def finest_two_slope(rows, key):
 
     usable = sorted(usable, key=lambda row: row["h_m"])
     finest = usable[:2]
+    if finest[0]["h_m"] == finest[1]["h_m"]:
+        raise SystemExit(
+            "finest_two_slope: the two finest usable rows share h_m = "
+            f"{finest[0]['h_m']:g} m "
+            f"({finest[0].get('mesh', '?')} and {finest[1].get('mesh', '?')}); "
+            "a combined-refinement slope needs two distinct horizontal "
+            "spacings (the finest two usable rows share h_m, so no "
+            "combined-refinement slope can be formed)"
+        )
     return math.log(finest[1][key] / finest[0][key]) / math.log(
         finest[1]["h_m"] / finest[0]["h_m"]
     )

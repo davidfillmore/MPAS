@@ -102,6 +102,28 @@ class TestTerrainZgridScript(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "nan"):
             self.script.check_residual("diverged", math.nan, 1.0e-8)
 
+    def test_finest_two_slope(self):
+        rows = [
+            {"mesh": "15km", "h_m": 15000.0, "l2_interior": 4.0e-3},
+            {"mesh": "7.5km", "h_m": 7500.0, "l2_interior": 1.0e-3},
+        ]
+        # log(4e-3/1e-3) / log(15000/7500) = log 4 / log 2 = 2.0 exactly.
+        self.assertAlmostEqual(
+            self.script.finest_two_slope(rows, "l2_interior"), 2.0, places=12
+        )
+        # Fewer than two usable rows: NaN, not an exception.
+        self.assertTrue(
+            math.isnan(self.script.finest_two_slope(rows[:1], "l2_interior"))
+        )
+
+    def test_finest_two_slope_vertical_only_sequence_exits(self):
+        rows = [
+            {"mesh": "15km", "h_m": 15000.0, "l2_interior": 1.0e-3},
+            {"mesh": "15km", "h_m": 15000.0, "l2_interior": 2.5e-4},
+        ]
+        with self.assertRaises(SystemExit):
+            self.script.finest_two_slope(rows, "l2_interior")
+
 
 if __name__ == "__main__":
     unittest.main()
