@@ -24,6 +24,7 @@ module mpas_elliptic_operator
    save
 
    public :: mpas_elliptic_operator_type, elliptic_operator_init
+   public :: elliptic_operator_init_from_weights
 
    type :: mpas_elliptic_operator_type
       integer :: nCells = 0
@@ -38,6 +39,7 @@ module mpas_elliptic_operator
       real(kind=RKIND), allocatable :: v_weight_lower(:,:)
       real(kind=RKIND), allocatable :: diag(:,:)
       real(kind=RKIND), allocatable :: volume(:,:)
+      logical, allocatable :: active(:,:)
    contains
       procedure :: matvec => elliptic_operator_matvec
       procedure :: destroy => elliptic_operator_destroy
@@ -70,8 +72,87 @@ contains
       real(kind=RKIND), dimension(nVertLevels), intent(in) :: dz
       real(kind=RKIND), intent(in) :: epsilon0
 
-      integer :: iCell, iEdge, iEdgeOnCell, jCell, k
+      integer :: iCell, iEdge, k
       real(kind=RKIND) :: dzFace
+      real(kind=RKIND), allocatable :: h_flat(:,:), v_up_flat(:,:), v_lo_flat(:,:)
+      real(kind=RKIND), allocatable :: diag_extra_flat(:,:), volume_flat(:,:)
+      logical, allocatable :: active_flat(:,:)
+
+      allocate(h_flat(nVertLevels,nEdges))
+      allocate(v_up_flat(nVertLevels,nCells))
+      allocate(v_lo_flat(nVertLevels,nCells))
+      allocate(diag_extra_flat(nVertLevels,nCells))
+      allocate(volume_flat(nVertLevels,nCells))
+      allocate(active_flat(nVertLevels,nCells))
+
+      h_flat = 0.0_RKIND
+      v_up_flat = 0.0_RKIND
+      v_lo_flat = 0.0_RKIND
+      diag_extra_flat = 0.0_RKIND
+      volume_flat = 0.0_RKIND
+      active_flat = .true.
+
+      do iEdge = 1, nEdges
+         do k = 1, nVertLevels
+            h_flat(k,iEdge) = epsilon0 * dvEdge(iEdge) * dz(k) / dcEdge(iEdge)
+         end do
+      end do
+
+      do iCell = 1, nCells
+         do k = 1, nVertLevels
+            volume_flat(k,iCell) = areaCell(iCell) * dz(k)
+
+            if (k < nVertLevels) then
+               dzFace = 0.5_RKIND * (dz(k) + dz(k+1))
+               v_up_flat(k,iCell) = epsilon0 * areaCell(iCell) / dzFace
+            end if
+
+            if (k > 1) then
+               dzFace = 0.5_RKIND * (dz(k-1) + dz(k))
+               v_lo_flat(k,iCell) = epsilon0 * areaCell(iCell) / dzFace
+            else
+               v_lo_flat(k,iCell) = epsilon0 * areaCell(iCell) / (0.5_RKIND * dz(k))
+            end if
+         end do
+      end do
+
+      call elliptic_operator_init_from_weights(op, nCells, nEdges, nVertLevels, maxEdges, &
+                                               nEdgesOnCell, cellsOnCell, edgesOnCell, &
+                                               h_flat, v_up_flat, v_lo_flat, diag_extra_flat, &
+                                               volume_flat, active_flat)
+
+      deallocate(h_flat, v_up_flat, v_lo_flat, diag_extra_flat, volume_flat, active_flat)
+
+   end subroutine elliptic_operator_init
+
+!***********************************************************************
+!
+!  routine elliptic_operator_init_from_weights
+!
+!> \brief Initialize an electrostatic elliptic operator from precomputed weights
+!
+!-----------------------------------------------------------------------
+   subroutine elliptic_operator_init_from_weights(op, nCells, nEdges, nVertLevels, maxEdges, &
+                                                  nEdgesOnCell, cellsOnCell, edgesOnCell, &
+                                                  h_weight, v_weight_upper, v_weight_lower, &
+                                                  diag_extra, volume, active)
+
+      type(mpas_elliptic_operator_type), intent(out) :: op
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nEdges
+      integer, intent(in) :: nVertLevels
+      integer, intent(in) :: maxEdges
+      integer, dimension(nCells), intent(in) :: nEdgesOnCell
+      integer, dimension(maxEdges,nCells), intent(in) :: cellsOnCell
+      integer, dimension(maxEdges,nCells), intent(in) :: edgesOnCell
+      real(kind=RKIND), dimension(nVertLevels,nEdges), intent(in) :: h_weight
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: v_weight_upper
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: v_weight_lower
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: diag_extra
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: volume
+      logical, dimension(nVertLevels,nCells), intent(in) :: active
+
+      integer :: iCell, iEdge, iEdgeOnCell, jCell, k
 
       op%nCells = nCells
       op%nEdges = nEdges
@@ -86,43 +167,26 @@ contains
       allocate(op%v_weight_lower(nVertLevels,nCells))
       allocate(op%diag(nVertLevels,nCells))
       allocate(op%volume(nVertLevels,nCells))
+      allocate(op%active(nVertLevels,nCells))
 
       op%nEdgesOnCell = nEdgesOnCell
       op%cellsOnCell = cellsOnCell
       op%edgesOnCell = edgesOnCell
-      op%h_weight = 0.0_RKIND
-      op%v_weight_upper = 0.0_RKIND
-      op%v_weight_lower = 0.0_RKIND
-      op%diag = 0.0_RKIND
-      op%volume = 0.0_RKIND
-
-      do iEdge = 1, nEdges
-         do k = 1, nVertLevels
-            op%h_weight(k,iEdge) = epsilon0 * dvEdge(iEdge) * dz(k) / dcEdge(iEdge)
-         end do
-      end do
+      op%h_weight = h_weight
+      op%v_weight_upper = v_weight_upper
+      op%v_weight_lower = v_weight_lower
+      op%volume = volume
+      op%active = active
 
       do iCell = 1, nCells
          do k = 1, nVertLevels
-            op%volume(k,iCell) = areaCell(iCell) * dz(k)
-
-            if (k < nVertLevels) then
-               dzFace = 0.5_RKIND * (dz(k) + dz(k+1))
-               op%v_weight_upper(k,iCell) = epsilon0 * areaCell(iCell) / dzFace
+            if (.not. op%active(k,iCell)) then
+               op%diag(k,iCell) = 1.0_RKIND
+               cycle
             end if
 
-            if (k > 1) then
-               dzFace = 0.5_RKIND * (dz(k-1) + dz(k))
-               op%v_weight_lower(k,iCell) = epsilon0 * areaCell(iCell) / dzFace
-            else
-               op%v_weight_lower(k,iCell) = epsilon0 * areaCell(iCell) / (0.5_RKIND * dz(k))
-            end if
-         end do
-      end do
-
-      do iCell = 1, nCells
-         do k = 1, nVertLevels
-            op%diag(k,iCell) = op%v_weight_upper(k,iCell) + op%v_weight_lower(k,iCell)
+            op%diag(k,iCell) = op%v_weight_upper(k,iCell) + op%v_weight_lower(k,iCell) + &
+                               diag_extra(k,iCell)
 
             do iEdgeOnCell = 1, op%nEdgesOnCell(iCell)
                iEdge = op%edgesOnCell(iEdgeOnCell,iCell)
@@ -135,7 +199,7 @@ contains
          end do
       end do
 
-   end subroutine elliptic_operator_init
+   end subroutine elliptic_operator_init_from_weights
 
 !***********************************************************************
 !
@@ -157,23 +221,28 @@ contains
       do iCell = 1, op%nCells
          do k = 1, op%nVertLevels
             y(k,iCell) = op%diag(k,iCell) * x(k,iCell)
+         end do
 
-            do iEdgeOnCell = 1, op%nEdgesOnCell(iCell)
-               iEdge = op%edgesOnCell(iEdgeOnCell,iCell)
-               jCell = op%cellsOnCell(iEdgeOnCell,iCell)
-               if (iEdge > 0 .and. iEdge <= op%nEdges .and. &
-                   jCell > 0 .and. jCell <= op%nCells) then
-                  y(k,iCell) = y(k,iCell) - op%h_weight(k,iEdge) * x(k,jCell)
-               end if
-            end do
+         do iEdgeOnCell = 1, op%nEdgesOnCell(iCell)
+            iEdge = op%edgesOnCell(iEdgeOnCell,iCell)
+            jCell = op%cellsOnCell(iEdgeOnCell,iCell)
+            if (iEdge > 0 .and. iEdge <= op%nEdges .and. &
+                jCell > 0 .and. jCell <= op%nCells) then
+               do k = 1, op%nVertLevels
+                  if (op%active(k,iCell) .and. op%active(k,jCell)) &
+                     y(k,iCell) = y(k,iCell) - op%h_weight(k,iEdge) * x(k,jCell)
+               end do
+            end if
+         end do
 
-            if (k < op%nVertLevels) then
+         do k = 1, op%nVertLevels - 1
+            if (op%active(k,iCell) .and. op%active(k+1,iCell)) &
                y(k,iCell) = y(k,iCell) - op%v_weight_upper(k,iCell) * x(k+1,iCell)
-            end if
+         end do
 
-            if (k > 1) then
+         do k = 2, op%nVertLevels
+            if (op%active(k,iCell) .and. op%active(k-1,iCell)) &
                y(k,iCell) = y(k,iCell) - op%v_weight_lower(k,iCell) * x(k-1,iCell)
-            end if
          end do
       end do
 
@@ -198,6 +267,7 @@ contains
       if (allocated(op%v_weight_lower)) deallocate(op%v_weight_lower)
       if (allocated(op%diag)) deallocate(op%diag)
       if (allocated(op%volume)) deallocate(op%volume)
+      if (allocated(op%active)) deallocate(op%active)
 
       op%nCells = 0
       op%nEdges = 0
