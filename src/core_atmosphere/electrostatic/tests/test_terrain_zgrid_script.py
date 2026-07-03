@@ -181,6 +181,26 @@ class TestTerrainZgridScript(unittest.TestCase):
                 zhill2 = np.asarray(dataset.variables["zgrid"][:])
             self.assertLess(float(np.abs(zhill2 - expected).max()), 1.0e-10)
 
+    def test_terrain_and_phi_match_fortran_goldens(self):
+        # Cross-language pin: the same three phi goldens are asserted in
+        # tests/test_mms_source.F90
+        # (test_mms_terrain_phi_exact_matches_python_goldens);
+        # update both files together or not at all.
+        script = self.script
+        length_x, length_y, ztop, h0 = 40000.0, 30000.0, 8000.0, 500.0
+        goldens = [
+            (5000.0, 3000.0, 2000.0, 286.03070140884216, 0.34197305152518409),
+            (12345.0, 6789.0, 5432.1, -26.71091916697839, 0.87636771702904304),
+            (20000.0, 15000.0, 7000.0, 500.0, 0.97814760073380569),
+        ]
+        for x, y, z, s_expected, phi_expected in goldens:
+            s = float(script.cosine_hill_terrain(x, y, length_x, length_y, h0))
+            phi = float(
+                script.phi_exact_terrain(x, y, z, length_x, length_y, ztop, h0)
+            )
+            self.assertLess(abs(s - s_expected), 1.0e-9)
+            self.assertLess(abs(phi - phi_expected), 1.0e-12)
+
 
 if __name__ == "__main__":
     unittest.main()

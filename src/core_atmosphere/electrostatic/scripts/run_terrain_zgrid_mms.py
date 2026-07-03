@@ -50,11 +50,22 @@ a1 = load_helper_module("run_tier_A1_cartesian_mms")
 a2 = load_helper_module("setup_tier_A2_sphere_meshes")
 
 
-def phi_exact_terrain(x, y, z, x_period, y_period, z_top, hill_height):
-    """Mirror electrostatic_mms_terrain_phi_exact."""
-    terrain = hill_height * np.cos(2.0 * np.pi * np.asarray(x) / x_period) * np.cos(
+def cosine_hill_terrain(x, y, x_period, y_period, hill_height):
+    """Analytic cosine-hill terrain height (single source of truth).
+
+    Mirrors the geometry inside electrostatic_mms_terrain_phi_exact and
+    electrostatic_fill_mms_terrain_source (mpas_electrostatic_source.F);
+    pinned against the Fortran by golden values in
+    tests/test_terrain_zgrid_script.py and tests/test_mms_source.F90.
+    """
+    return hill_height * np.cos(2.0 * np.pi * np.asarray(x) / x_period) * np.cos(
         2.0 * np.pi * np.asarray(y) / y_period
     )
+
+
+def phi_exact_terrain(x, y, z, x_period, y_period, z_top, hill_height):
+    """Mirror electrostatic_mms_terrain_phi_exact."""
+    terrain = cosine_hill_terrain(x, y, x_period, y_period, hill_height)
     ucoord = (np.asarray(z) - terrain) / (z_top - terrain)
     return np.sin(0.5 * np.pi * ucoord)
 
@@ -154,9 +165,7 @@ def rewrite_zgrid_terrain(init_nc, *, hill_height, ztop):
         if not math.isfinite(y_period):
             y_period = float(np.max(ycell) - np.min(ycell))
 
-        terrain = hill_height * np.cos(2.0 * np.pi * xcell / x_period) * np.cos(
-            2.0 * np.pi * ycell / y_period
-        )
+        terrain = cosine_hill_terrain(xcell, ycell, x_period, y_period, hill_height)
         zeta = np.linspace(0.0, ztop, nlevels_p1)
 
         if level_axis == 1:
@@ -201,9 +210,7 @@ def compute_interior_errors(output_nc, hill_height, buffer_layers=BUFFER_LAYERS)
     dz = zgrid[1:, :] - zgrid[:-1, :]
     z_bottom = float(np.min(zgrid[0, :]))
     dz_p = (z_top - z_bottom) / phi.shape[0]
-    terrain = hill_height * np.cos(2.0 * np.pi * xcell / x_period) * np.cos(
-        2.0 * np.pi * ycell / y_period
-    )
+    terrain = cosine_hill_terrain(xcell, ycell, x_period, y_period, hill_height)
     exact = phi_exact_terrain(
         xcell[None, :],
         ycell[None, :],

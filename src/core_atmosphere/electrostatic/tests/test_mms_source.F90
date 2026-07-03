@@ -24,6 +24,7 @@ program test_mms_source
    call test_sphere_mms_source_uses_boundary_compatible_vertical_basis()
    call test_sphere_horizontal_mms_source_uses_discrete_vertical_operator()
    call test_mms_terrain_source_matches_fd_laplacian()
+   call test_mms_terrain_phi_exact_matches_python_goldens()
    call test_dipole_source_uses_explicit_center_with_expected_lobe_signs()
    call test_tripole_source_uses_explicit_center_with_expected_lobe_signs()
    call test_gaussian_monopole_source_is_centered_and_positive()
@@ -234,6 +235,26 @@ contains
       end function phi_t
 
    end subroutine test_mms_terrain_source_matches_fd_laplacian
+
+   subroutine test_mms_terrain_phi_exact_matches_python_goldens()
+      ! Cross-language pin: the same three phi goldens are asserted in
+      ! tests/test_terrain_zgrid_script.py
+      ! (test_terrain_and_phi_match_fortran_goldens);
+      ! update both files together or not at all.
+      real(kind=RKIND), parameter :: Lx = 40000.0_RKIND, Ly = 30000.0_RKIND
+      real(kind=RKIND), parameter :: ztop = 8000.0_RKIND, h0 = 500.0_RKIND
+      real(kind=RKIND), parameter :: tol = 1.0e-12_RKIND
+
+      if (abs(electrostatic_mms_terrain_phi_exact(5000.0_RKIND, 3000.0_RKIND, &
+              2000.0_RKIND, Lx, Ly, ztop, h0) - 0.34197305152518409_RKIND) > tol) &
+         stop "FAIL: terrain phi golden 1 (see test_terrain_zgrid_script.py)"
+      if (abs(electrostatic_mms_terrain_phi_exact(12345.0_RKIND, 6789.0_RKIND, &
+              5432.1_RKIND, Lx, Ly, ztop, h0) - 0.87636771702904304_RKIND) > tol) &
+         stop "FAIL: terrain phi golden 2 (see test_terrain_zgrid_script.py)"
+      if (abs(electrostatic_mms_terrain_phi_exact(20000.0_RKIND, 15000.0_RKIND, &
+              7000.0_RKIND, Lx, Ly, ztop, h0) - 0.97814760073380569_RKIND) > tol) &
+         stop "FAIL: terrain phi golden 3 (see test_terrain_zgrid_script.py)"
+   end subroutine test_mms_terrain_phi_exact_matches_python_goldens
 
    subroutine test_dipole_source_uses_explicit_center_with_expected_lobe_signs()
       integer, parameter :: nCells = 3, nVertLevels = 3
