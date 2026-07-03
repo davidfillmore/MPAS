@@ -37,25 +37,26 @@ maximum iteration count to $1000$.
 
 ## Preconditioners
 
-Three preconditioners are implemented and runtime-selectable:
+Two preconditioners are implemented and runtime-selectable, with a
+third planned:
 
 - **None:** $\mathbb{M} = \mathsf{I}$. Baseline.
 - **Jacobi:** $\mathbb{M} = \mathsf{D} \equiv \mathrm{diag}(A)$.
   One division per cell-column per iteration. Default.
-- **Block symmetric Gauss–Seidel (block SGS):** within each MPI
-  rank's partition, a forward plus a backward SGS sweep;
-  Jacobi-style coupling at partition boundaries. Convergence rate
-  improves by a constant factor at the cost of one extra halo
-  exchange per iteration.
+- **Block symmetric Gauss–Seidel (block SGS)** *(planned as future
+  work):* within each MPI rank's partition, a forward plus a backward
+  SGS sweep, with Jacobi-style coupling at partition boundaries.
+  Specified in [](appendices/derivations/pcg.md) but not yet
+  implemented in the current code.
 
 ## Null-space projection
 
-Under the Phase 1 boundary conditions the system matrix is
+Under the present boundary conditions the system matrix is
 non-singular and the constant-vector null space is absent. A
-projection step against the constant vector is nonetheless
-implemented behind a runtime flag for use in future pure-Neumann
-configurations (e.g. the global current-continuity operator
-$\nabla \cdot (\sigma \nabla)$ with conductivity-modulated BCs).
+projection step against the constant vector is planned for future
+pure-Neumann configurations (e.g. the global current-continuity
+operator $\nabla \cdot (\sigma \nabla)$ with conductivity-modulated
+BCs).
 
 ## Halo exchange and parallel implementation
 

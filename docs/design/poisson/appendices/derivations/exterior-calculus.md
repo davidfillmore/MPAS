@@ -105,7 +105,7 @@ a 3-form (a volume density) that must equal $-\rho\,\mu$.
 
 ## Boundary conditions in form language
 
-The Phase 1 boundary conditions translate as:
+The boundary conditions translate as:
 
 $$
 \begin{aligned}
@@ -293,7 +293,7 @@ gradient), $\mathsf{H}_1$ is the diagonal Hodge star
 $\mathsf{d}_0^{\top}$ is its matrix transpose (which represents
 the adjoint coboundary, i.e. the discrete divergence). The
 permittivity $\varepsilon$ factors out as an overall scalar
-because it is constant in Phase 1; for variable $\varepsilon$ it
+because it is constant in this work; for variable $\varepsilon$ it
 is absorbed into $\mathsf{H}_1$ as an edge-dependent factor.
 
 **Unwinding the composition row by row.** For a cell $i$, the
@@ -444,7 +444,7 @@ continuous one, which is dominated by the deviation from perfect
 orthogonality ("pathology" of non-centroidal Voronoi cells).
 This prediction motivates the Voronoi-centroid-offset correlation
 analysis in
-[](../../verification-plan/tier-c-mesh.md) (Tier C.3).
+[](../../mesh-sensitivity.md).
 
 (app-ec-feec)=
 ## Connection to finite element exterior calculus

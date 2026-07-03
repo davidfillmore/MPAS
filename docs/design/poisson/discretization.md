@@ -17,11 +17,10 @@ provides three primary horizontal metrics at each edge $e$:
 The base discretization assumes the layered-vertical coordinate is
 flat ($z$-levels rather than terrain-following) so that the 3D
 cell volume factors as $V_{i,k} = A_i \cdot \Delta z_k$ with
-$\Delta z_k$ the thickness of layer $k$. Terrain-following meshes
-can instead use the uniform-altitude `zgrid` remap mode described
-in [](discussion.md), where the operator is assembled from
-precomputed active-band finite-volume weights rather than the
-native per-level layer thicknesses $\Delta z_k$ used below.
+$\Delta z_k$ the thickness of layer $k$. Terrain-following meshes are
+handled by the altitude-grid remap of [](terrain-following.md), which
+recovers the operator below exactly on flat columns rather than by
+adding metric terms.
 
 Layer $k$ indices run from $k = 1$ (the ground-adjacent layer) to
 $k = K$ (the model-top layer). Layer-midpoint altitude is
@@ -148,11 +147,19 @@ iterative solver of choice.
 
 On a regular-hexagonal Voronoi tessellation with uniform vertical
 spacing, the stencil {eq}`eq-L-full` has truncation error
-$\mathcal{O}(h^2)$ in the bulk and $\mathcal{O}(h)$ pointwise near
-the ground face, with $\mathcal{O}(h^2)$ global $L^2$ convergence
-once the boundary-layer contribution is volume-weighted. On
-realistic MPAS-A Voronoi meshes with quasi-uniform distortion,
-supraconvergence delivers $\mathcal{O}(h^2)$ in $L^2$ under modest
-regularity assumptions; on variable-resolution meshes the
-transition-zone error behaviour is an empirical question that is
-addressed in [](verification-plan/tier-c-mesh.md).
+$\mathcal{O}(h^2)$ in the bulk. The one-sided ground-face closure
+leaves an $\mathcal{O}(1)$ per-unit-volume truncation defect confined
+to the single ground-adjacent layer, but its contribution to the
+solution error is only $\mathcal{O}(\Delta z^2)$ — the classical
+behavior of cell-centered Dirichlet treatments
+{cite:p}`forsyth1988quadratic` — so global second-order $L^2$
+convergence is retained (see [](appendices/derivations/taylor.md)). On
+the quasi-uniform icosahedral SCVT meshes used for global runs,
+supraconvergence is expected to deliver $\mathcal{O}(h^2)$ in $L^2$ in
+the regular-hexagonal bulk under modest regularity assumptions. This
+supraconvergence is not robust to loss of mesh regularity:
+[](mesh-sensitivity.md) shows empirically that on the irregular,
+general centroidal-Voronoi tessellations produced for
+variable-resolution configurations the global convergence rate
+collapses to $\sim\!0.35$, so the second-order behavior is effectively
+confined to near-uniform hexagonal meshes.
