@@ -21,7 +21,7 @@ $\Delta z_k$ the thickness of layer $k$. Terrain-following meshes
 can instead use the uniform-altitude `zgrid` remap mode described
 in [](discussion.md), where the operator is assembled from
 precomputed active-band finite-volume weights rather than the
-single layer thickness used below.
+native per-level layer thicknesses $\Delta z_k$ used below.
 
 Layer $k$ indices run from $k = 1$ (the ground-adjacent layer) to
 $k = K$ (the model-top layer). Layer-midpoint altitude is

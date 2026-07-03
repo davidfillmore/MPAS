@@ -58,8 +58,14 @@ The Phase-2 terrain path avoids solving directly in the
 terrain-following coordinate: when
 `config_electrostatic_terrain_mode = 'zgrid'`, charge is
 conservatively remapped from MPAS layers to a uniform altitude
-grid, Poisson is solved on that grid, and the potential and
-electric field are remapped back to MPAS midpoints. The terrain
+grid, Poisson is solved on that grid, and the potential `phi`
+and the cell-centered electric field `E_vector` are remapped
+back to MPAS midpoints for output. The one exception is the
+edge-normal component `E_normal`, which remains on the
+uniform-altitude Poisson grid; its per-column level heights are
+recorded by the `poisson_zmid` diagnostic, so in zgrid mode
+`E_normal` is read against `poisson_zmid` rather than the MPAS
+layer midpoints. The terrain
 boundary is represented by per-column active altitude bands, an
 exact cut-bottom Dirichlet distance to the local ground height,
 and shaved lateral faces: open air-air overlap carries the
