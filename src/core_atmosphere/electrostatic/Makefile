@@ -13,6 +13,10 @@ OBJS = mpas_electrostatic_benchmarks.o \
 
 all: $(OBJS)
 
+mpas_electrostatic_driver.o: mpas_electrostatic_bcs.o \
+                             mpas_electrostatic_source.o \
+                             mpas_electrostatic_vertical_remap.o
+
 clean:
 	$(RM) *.o *.mod *.f90
 	$(RM) *.i
