@@ -18,7 +18,9 @@ contains
       integer, parameter :: nCells = 1, nVertLevels = 3
       real(kind=RKIND) :: phi(nVertLevels,nCells), zMid(nVertLevels,nCells)
       real(kind=RKIND) :: E_vertical(nVertLevels,nCells)
-      real(kind=RKIND) :: expected(nVertLevels,nCells), phi_ground
+      real(kind=RKIND) :: expected(nVertLevels,nCells), phi_ground, z_top
+      real(kind=RKIND) :: zGround(nCells)
+      integer :: kFirst(nCells)
 
       ! phi = z^2 sampled at the layer midpoints, consistent with phi=0 at the
       ! ground face (z=0). The ground-adjacent estimate is a second-order
@@ -26,14 +28,30 @@ contains
       zMid(:,1) = [0.5_RKIND, 1.5_RKIND, 2.5_RKIND]
       phi(:,1) = zMid(:,1)**2
       phi_ground = 0.0_RKIND
+      z_top = 3.0_RKIND
+      zGround = 0.0_RKIND
+      kFirst = 1
 
-      call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, zMid, phi_ground, E_vertical)
+      call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, zMid, phi_ground, z_top, &
+                                            zGround, kFirst, E_vertical)
 
       expected(1,1) = -2.0_RKIND * zMid(1,1)
       expected(2,1) = -(phi(3,1) - phi(1,1)) / (zMid(3,1) - zMid(1,1))
-      expected(3,1) = 0.0_RKIND
+      expected(3,1) = -2.0_RKIND * (phi(2,1) - phi(3,1)) * (zMid(3,1) - z_top) / &
+                      ((zMid(2,1) - z_top)**2 - (zMid(3,1) - z_top)**2)
 
       if (maxval(abs(E_vertical - expected)) > 1.0e-12_RKIND) stop "FAIL: vertical E reconstruction mismatch"
+
+      zGround = 1.0_RKIND
+      kFirst = 2
+      phi(:,1) = 0.0_RKIND
+      phi(2,1) = (zMid(2,1) - 1.0_RKIND)**2
+      phi(3,1) = (zMid(3,1) - 1.0_RKIND)**2
+      call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, zMid, phi_ground, z_top, &
+                                            zGround, kFirst, E_vertical)
+      if (abs(E_vertical(2,1) + 2.0_RKIND*(zMid(2,1)-1.0_RKIND)) > 1.0e-12_RKIND) &
+         stop "FAIL: lifted-ground quadratic"
+      if (abs(E_vertical(1,1)) > 0.0_RKIND) stop "FAIL: buried level E /= 0"
    end subroutine test_vertical_e_ground_second_order_and_top_neumann
 
    subroutine test_ground_rhs_only_modifies_bottom_level()

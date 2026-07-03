@@ -56,43 +56,53 @@ contains
 !> \brief Compute cell-centered vertical electric field from potential
 !
 !-----------------------------------------------------------------------
-   subroutine electrostatic_compute_vertical_E(nCells, nVertLevels, phi, zMid, phi_ground, E_vertical)
+   subroutine electrostatic_compute_vertical_E(nCells, nVertLevels, phi, zMid, phi_ground, z_top, &
+                                               zGround, kFirstActive, E_vertical)
 
       integer, intent(in) :: nCells
       integer, intent(in) :: nVertLevels
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: phi
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMid
       real(kind=RKIND), intent(in) :: phi_ground
+      real(kind=RKIND), intent(in) :: z_top
+      real(kind=RKIND), dimension(nCells), intent(in) :: zGround
+      integer, dimension(nCells), intent(in) :: kFirstActive
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: E_vertical
 
-      integer :: iCell, k
-      real(kind=RKIND) :: z0, z1, z2
+      integer :: iCell, k, kf
+      real(kind=RKIND) :: z0, z1, z2, denom
 
       E_vertical = 0.0_RKIND
 
       do iCell = 1, nCells
-         if (nVertLevels == 1) then
-            E_vertical(1,iCell) = 0.0_RKIND
-         else
-            ! Second-order one-sided estimate at the ground-adjacent level,
-            ! using the Dirichlet ground face (flat-terrain Phase 1: z=0,
-            ! phi=phi_ground) and the two lowest cell midpoints. Exact for a
-            ! quadratic, and correctly placed at level 1.
-            z0 = 0.0_RKIND
-            z1 = zMid(1,iCell)
-            z2 = zMid(2,iCell)
-            E_vertical(1,iCell) = -( &
-               phi_ground   * (z1 - z2) / ((z0 - z1) * (z0 - z2)) + &
-               phi(1,iCell) * (2.0_RKIND * z1 - z0 - z2) / ((z1 - z0) * (z1 - z2)) + &
-               phi(2,iCell) * (z1 - z0) / ((z2 - z0) * (z2 - z1)) )
+         kf = kFirstActive(iCell)
+         if (kf > nVertLevels) cycle
 
-            do k = 2, nVertLevels - 1
-               E_vertical(k,iCell) = -(phi(k+1,iCell) - phi(k-1,iCell)) / &
-                                      (zMid(k+1,iCell) - zMid(k-1,iCell))
-            end do
-
-            E_vertical(nVertLevels,iCell) = 0.0_RKIND
+         if (kf >= nVertLevels) then
+            E_vertical(kf,iCell) = -(phi(kf,iCell) - phi_ground) / &
+                                   (zMid(kf,iCell) - zGround(iCell))
+            cycle
          end if
+
+         z0 = zGround(iCell)
+         z1 = zMid(kf,iCell)
+         z2 = zMid(kf+1,iCell)
+         E_vertical(kf,iCell) = -( &
+            phi_ground      * (z1 - z2) / ((z0 - z1) * (z0 - z2)) + &
+            phi(kf,iCell)   * (2.0_RKIND * z1 - z0 - z2) / ((z1 - z0) * (z1 - z2)) + &
+            phi(kf+1,iCell) * (z1 - z0) / ((z2 - z0) * (z2 - z1)) )
+
+         do k = kf + 1, nVertLevels - 1
+            E_vertical(k,iCell) = -(phi(k+1,iCell) - phi(k-1,iCell)) / &
+                                   (zMid(k+1,iCell) - zMid(k-1,iCell))
+         end do
+
+         z1 = zMid(nVertLevels-1,iCell)
+         z2 = zMid(nVertLevels,iCell)
+         denom = (z1 - z_top)**2 - (z2 - z_top)**2
+         E_vertical(nVertLevels,iCell) = &
+            -2.0_RKIND * (phi(nVertLevels-1,iCell) - phi(nVertLevels,iCell)) * &
+            (z2 - z_top) / denom
       end do
 
    end subroutine electrostatic_compute_vertical_E

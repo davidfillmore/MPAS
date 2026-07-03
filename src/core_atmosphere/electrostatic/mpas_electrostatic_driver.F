@@ -868,8 +868,10 @@ contains
       type(mpas_pool_type), pointer :: mesh_pool, es_pool
       integer, pointer :: nCells_ptr, nEdges_ptr, nVertLevels_ptr
       integer :: iCell, k, nCells, nEdges, nVertLevels
+      integer, allocatable :: kFirstFlat(:)
       integer, dimension(:,:), pointer :: cellsOnEdge
       real(kind=RKIND), dimension(:), pointer :: dcEdge
+      real(kind=RKIND), allocatable :: zGroundFlat(:)
       real(kind=RKIND), dimension(:,:), pointer :: localVerticalUnitVectors
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, E_normal
@@ -902,8 +904,13 @@ contains
                             state_ptr % E_zonal, state_ptr % E_meridional, includeHalos=.true.)
 
       call fill_z_mid(nCells, nVertLevels, zgrid, state_ptr % zMid)
+      allocate(zGroundFlat(nCells), kFirstFlat(nCells))
+      zGroundFlat = 0.0_RKIND
+      kFirstFlat = 1
       call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, state_ptr % zMid, &
-                                            phi_ground, state_ptr % E_vertical)
+                                            phi_ground, state_ptr % z_top, zGroundFlat, &
+                                            kFirstFlat, state_ptr % E_vertical)
+      deallocate(zGroundFlat, kFirstFlat)
 
       do iCell = 1, nCells
          do k = 1, nVertLevels
