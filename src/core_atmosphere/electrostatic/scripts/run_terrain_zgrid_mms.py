@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Terrain z-grid MMS gate for the electrostatic Poisson solver.
 
-For each (mesh, K) pair, this runner builds a terrain variant from the flat
-Tier A.1 bundle, regenerates init.nc at K vertical levels, rewrites zgrid to
-analytic cosine-hill terrain-following columns, runs the zero-duration MMS
-solve with terrain_mode='zgrid', and reports interior relative L2 errors.
+For each (mesh, K) pair, this runner builds one hill-independent flat bundle
+(meshes/flat_<mesh>_K<K>) from the flat Tier A.1 bundle, regenerating init.nc
+at K vertical levels once. Each hill amplitude then copies that flat bundle
+and its init.nc into a hill-keyed bundle (meshes/terr_<mesh>_K<K>_h<h>),
+rewrites zgrid to analytic cosine-hill terrain-following columns, runs the
+zero-duration MMS solve with terrain_mode='zgrid', and reports interior
+relative L2 errors.
 """
 
 from __future__ import annotations
@@ -13,10 +16,8 @@ import argparse
 import csv
 import importlib.util
 import math
-import os
 import pathlib
 import shutil
-import subprocess
 import sys
 
 import netCDF4 as nc
@@ -38,17 +39,15 @@ BUNDLE_FILES = (
 )
 
 
-def load_a1_helpers():
-    spec = importlib.util.spec_from_file_location(
-        "run_tier_A1_cartesian_mms",
-        SCRIPT_DIR / "run_tier_A1_cartesian_mms.py",
-    )
+def load_helper_module(name):
+    spec = importlib.util.spec_from_file_location(name, SCRIPT_DIR / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-a1 = load_a1_helpers()
+a1 = load_helper_module("run_tier_A1_cartesian_mms")
+a2 = load_helper_module("setup_tier_A2_sphere_meshes")
 
 
 def phi_exact_terrain(x, y, z, x_period, y_period, z_top, hill_height):
@@ -71,6 +70,27 @@ def parse_sequence(items):
     return sequence
 
 
+def flat_bundle_dir(run_root, mesh, k_levels):
+    """Hill-independent flat bundle location for one (mesh, K)."""
+    return run_root / "meshes" / f"flat_{mesh}_K{k_levels}"
+
+
+def seed_hill_bundle(flat_bundle, hill_bundle):
+    """Copy run files and the flat init.nc into a hill-keyed bundle.
+
+    rewrite_zgrid_terrain then imposes terrain on the copy; the shared flat
+    init.nc is never modified, so every hill amplitude reuses one
+    init_atmosphere job per (mesh, K).
+    """
+    hill_bundle.mkdir(parents=True, exist_ok=True)
+    for name in BUNDLE_FILES:
+        shutil.copy2(flat_bundle / name, hill_bundle / name)
+    for pattern in ("graph.info*", "block.graph.info*"):
+        for path in flat_bundle.glob(pattern):
+            shutil.copy2(path, hill_bundle / path.name)
+    shutil.copy2(flat_bundle / "init.nc", hill_bundle / "init.nc")
+
+
 def build_variant_bundle(
     a1_mesh_dir,
     dst_dir,
@@ -81,7 +101,13 @@ def build_variant_bundle(
     mpiexec,
     force=False,
 ):
-    """Copy the flat A.1 bundle and regenerate init.nc at K levels and ztop."""
+    """Build the hill-independent flat bundle: copy the flat A.1 bundle and
+    regenerate init.nc at K levels and ztop.
+
+    The bundle depends only on (mesh, K, ztop); the hill enters later, when
+    each hill case copies this bundle (seed_hill_bundle) and rewrites the copy
+    (rewrite_zgrid_terrain). init.nc here stays flat and is never modified.
+    """
     if (dst_dir / "init.nc").exists() and not force:
         return
 
@@ -109,26 +135,7 @@ def build_variant_bundle(
     if not init_model.exists():
         raise FileNotFoundError(f"init executable does not exist: {init_model}")
 
-    link = dst_dir / "init_atmosphere_model"
-    if link.exists() or link.is_symlink():
-        link.unlink()
-    os.symlink(init_model, link)
-
-    init_nc = dst_dir / "init.nc"
-    if init_nc.exists():
-        init_nc.unlink()
-
-    with (dst_dir / "init.out").open("w") as log:
-        result = subprocess.run(
-            [mpiexec, "-n", str(ranks), "./init_atmosphere_model"],
-            cwd=dst_dir,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-
-    if result.returncode != 0 or not init_nc.exists():
-        raise RuntimeError(f"init_atmosphere failed in {dst_dir}; see {dst_dir / 'init.out'}")
+    a2.run_init_atmosphere(dst_dir, init_model, ranks, mpiexec, force)
 
 
 def rewrite_zgrid_terrain(init_nc, *, hill_height, ztop):
@@ -297,20 +304,11 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def run_case(args, run_root, a1_root, mesh, k_levels, hill_height):
+def run_case(args, run_root, mesh, k_levels, hill_height):
     label = f"terr_{mesh}_K{k_levels}_h{int(round(hill_height))}"
     bundle = run_root / "meshes" / label
     if not args.analysis_only:
-        build_variant_bundle(
-            a1_root / "meshes" / mesh,
-            bundle,
-            k_levels,
-            args.ztop,
-            args.init_model.expanduser(),
-            args.ranks,
-            args.mpiexec,
-            force=args.force,
-        )
+        seed_hill_bundle(flat_bundle_dir(run_root, mesh, k_levels), bundle)
         rewrite_zgrid_terrain(bundle / "init.nc", hill_height=hill_height, ztop=args.ztop)
 
     run_dir, partition = a1.prepare_run_dir(
@@ -360,10 +358,23 @@ def main(argv=None):
     sequence = parse_sequence(args.sequence)
     gate_failed = False
 
+    if not args.analysis_only:
+        for mesh, k_levels in sequence:
+            build_variant_bundle(
+                a1_root / "meshes" / mesh,
+                flat_bundle_dir(run_root, mesh, k_levels),
+                k_levels,
+                args.ztop,
+                args.init_model.expanduser(),
+                args.ranks,
+                args.mpiexec,
+                force=args.force,
+            )
+
     for hill_index, hill_height in enumerate(args.hill_heights):
         rows = []
         for mesh, k_levels in sequence:
-            row = run_case(args, run_root, a1_root, mesh, k_levels, hill_height)
+            row = run_case(args, run_root, mesh, k_levels, hill_height)
             rows.append(row)
             print(
                 f"{row['mesh']}/K{row['K']}/h{hill_height:.0f}: "

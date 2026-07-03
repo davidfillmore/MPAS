@@ -124,6 +124,63 @@ class TestTerrainZgridScript(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.script.finest_two_slope(rows, "l2_interior")
 
+    def test_seed_hill_bundle_isolates_flat_init(self):
+        script, h0, ztop, length, nlevels = self.script, 500.0, 8000.0, 40000.0, 3
+
+        with tempfile.TemporaryDirectory() as tmp:
+            flat = pathlib.Path(tmp) / "meshes" / "flat_20km_K3"
+            hill = pathlib.Path(tmp) / "meshes" / "terr_20km_K3_h500"
+            flat.mkdir(parents=True)
+            for name in script.BUNDLE_FILES:
+                (flat / name).write_text(f"placeholder {name}\n")
+            (flat / "graph.info").write_text("placeholder\n")
+            (flat / "graph.info.part.4").write_text("placeholder\n")
+
+            zeta = np.linspace(0.0, ztop, nlevels + 1)
+            with nc.Dataset(flat / "init.nc", "w") as dataset:
+                dataset.createDimension("nCells", 4)
+                dataset.createDimension("nVertLevelsP1", nlevels + 1)
+                dataset.x_period = length
+                dataset.y_period = length
+                zgrid = dataset.createVariable(
+                    "zgrid", "f8", ("nCells", "nVertLevelsP1")
+                )
+                zgrid[:] = np.broadcast_to(zeta, (4, nlevels + 1))
+                xcell = dataset.createVariable("xCell", "f8", ("nCells",))
+                ycell = dataset.createVariable("yCell", "f8", ("nCells",))
+                xcell[:] = [0.0, 10000.0, 20000.0, 30000.0]
+                ycell[:] = [0.0, 5000.0, 10000.0, 15000.0]
+
+            script.seed_hill_bundle(flat, hill)
+            script.rewrite_zgrid_terrain(hill / "init.nc", hill_height=h0, ztop=ztop)
+
+            for name in script.BUNDLE_FILES + ("graph.info", "graph.info.part.4"):
+                self.assertTrue((hill / name).exists(), name)
+
+            # The shared flat init.nc must remain flat.
+            with nc.Dataset(flat / "init.nc") as dataset:
+                zflat = np.asarray(dataset.variables["zgrid"][:])
+            self.assertLess(float(np.abs(zflat - zeta[None, :]).max()), 1.0e-12)
+
+            # The hill copy must carry the terrain-following columns.
+            with nc.Dataset(hill / "init.nc") as dataset:
+                zhill = np.asarray(dataset.variables["zgrid"][:])
+                xcell = np.asarray(dataset.variables["xCell"][:])
+                ycell = np.asarray(dataset.variables["yCell"][:])
+            terrain = h0 * np.cos(2.0 * np.pi * xcell / length) * np.cos(
+                2.0 * np.pi * ycell / length
+            )
+            expected = zeta[None, :] + terrain[:, None] * (1.0 - zeta[None, :] / ztop)
+            self.assertLess(float(np.abs(zhill - expected).max()), 1.0e-10)
+
+            # Re-seeding resets the hill copy to flat; rewrite re-imposes
+            # terrain: the copy-then-rewrite cycle is idempotent.
+            script.seed_hill_bundle(flat, hill)
+            script.rewrite_zgrid_terrain(hill / "init.nc", hill_height=h0, ztop=ztop)
+            with nc.Dataset(hill / "init.nc") as dataset:
+                zhill2 = np.asarray(dataset.variables["zgrid"][:])
+            self.assertLess(float(np.abs(zhill2 - expected).max()), 1.0e-10)
+
 
 if __name__ == "__main__":
     unittest.main()
