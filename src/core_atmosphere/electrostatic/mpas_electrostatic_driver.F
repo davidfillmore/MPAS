@@ -70,7 +70,6 @@ module mpas_electrostatic_driver
       real(kind=RKIND), allocatable :: airThickness(:,:)
       real(kind=RKIND), allocatable :: wallWeight(:,:)
       real(kind=RKIND), allocatable :: work(:,:)   ! per-solve scratch: rhs source buffer + back-remap target
-      real(kind=RKIND), allocatable :: rhoP(:,:)
       integer, allocatable :: kFirstActive(:)
       logical, allocatable :: active(:,:)
       real(kind=RKIND), allocatable :: E_vertical(:,:)
@@ -228,7 +227,6 @@ contains
          if (allocated(state_ptr % airThickness)) deallocate(state_ptr % airThickness)
          if (allocated(state_ptr % wallWeight)) deallocate(state_ptr % wallWeight)
          if (allocated(state_ptr % work)) deallocate(state_ptr % work)
-         if (allocated(state_ptr % rhoP)) deallocate(state_ptr % rhoP)
          if (allocated(state_ptr % kFirstActive)) deallocate(state_ptr % kFirstActive)
          if (allocated(state_ptr % active)) deallocate(state_ptr % active)
          if (allocated(state_ptr % E_vertical)) deallocate(state_ptr % E_vertical)
@@ -559,10 +557,6 @@ contains
                                             state_ptr % zFaceP, state_ptr % zMidPC, &
                                             state_ptr % active, state_ptr % kFirstActive, &
                                             state_ptr % airThickness)
-      if (zgrid_mode) then
-         allocate(state_ptr % rhoP(nVertLevels,nCells))
-         state_ptr % rhoP = 0.0_RKIND
-      end if
 
       if (sphere_radius > 0.0_RKIND) state_ptr % sphere_radius = sphere_radius
       state_ptr % source_x0 = source_x0
@@ -721,7 +715,7 @@ contains
                                                        state_ptr % zMidPC, epsilon0, &
                                                        state_ptr % x_period, state_ptr % y_period, &
                                                        state_ptr % z_top, hill_height, &
-                                                       state_ptr % rhoP, active=state_ptr % active)
+                                                       state_ptr % work, active=state_ptr % active)
             call electrostatic_fill_mms_terrain_source(nCells, nVertLevels, xCell, yCell, &
                                                        state_ptr % zMid, epsilon0, &
                                                        state_ptr % x_period, state_ptr % y_period, &
@@ -790,11 +784,14 @@ contains
          case ('stub', 'external')
             call electrostatic_remap_rho_conservative(nCells, nVertLevels, zgrid, &
                      state_ptr % zFaceP, state_ptr % zGround, state_ptr % kFirstActive, &
-                     state_ptr % active, state_ptr % airThickness, rho_charge, state_ptr % rhoP)
+                     state_ptr % active, state_ptr % airThickness, rho_charge, state_ptr % work)
          case default
             continue
          end select
-         state_ptr % rhs = state_ptr % rhoP * state_ptr % op % volume
+         ! state%work holds the Poisson-grid charge density from the fill or
+         ! remap above; it is consumed into rhs here, before the solve, and is
+         ! reused as back-remap scratch only after the solve (postprocess).
+         state_ptr % rhs = state_ptr % work * state_ptr % op % volume
       else
          state_ptr % rhs = rho_charge * state_ptr % op % volume
       end if
