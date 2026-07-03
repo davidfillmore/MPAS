@@ -89,6 +89,19 @@ class TestTerrainZgridScript(unittest.TestCase):
                 zgrid2 = np.asarray(dataset.variables["zgrid"][:])
             self.assertLess(float(np.abs(zgrid2 - expected).max()), 1.0e-10)
 
+    def test_check_residual_rejects_nan_and_excess(self):
+        # Within tolerance: no exception.
+        self.script.check_residual("ok", 9.9e-9, 1.0e-8)
+
+        # Over tolerance: raises, with the value in the message.
+        with self.assertRaisesRegex(RuntimeError, "2.000e-08"):
+            self.script.check_residual("high", 2.0e-8, 1.0e-8)
+
+        # NaN (diverged solve, or cg_residual_final absent so
+        # scalar_diagnostic returned its NaN default): must also raise.
+        with self.assertRaisesRegex(RuntimeError, "nan"):
+            self.script.check_residual("diverged", math.nan, 1.0e-8)
+
 
 if __name__ == "__main__":
     unittest.main()

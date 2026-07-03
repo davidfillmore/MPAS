@@ -226,6 +226,19 @@ def compute_interior_errors(output_nc, hill_height, buffer_layers=BUFFER_LAYERS)
     }
 
 
+def check_residual(label, residual, tol):
+    """Abort unless the final CG residual is a finite value within tol.
+
+    Written as `not (residual <= tol)` so NaN — from a diverged solve or a
+    missing cg_residual_final diagnostic (scalar_diagnostic defaults to
+    NaN) — fails the gate instead of slipping past `residual > tol`.
+    """
+    if not (residual <= tol):
+        raise RuntimeError(
+            f"{label}: final CG residual {residual:.3e} is not <= {tol:.1e}"
+        )
+
+
 def finest_two_slope(rows, key):
     usable = [
         row
@@ -309,11 +322,7 @@ def run_case(args, run_root, a1_root, mesh, k_levels, hill_height):
         raise FileNotFoundError(f"{output_nc} was not created")
 
     result = compute_interior_errors(output_nc, hill_height)
-    if result["cg_residual_final"] > args.residual_tol:
-        raise RuntimeError(
-            f"{label}: final CG residual {result['cg_residual_final']:.3e} "
-            f"exceeds {args.residual_tol:.1e}"
-        )
+    check_residual(label, result["cg_residual_final"], args.residual_tol)
 
     return {
         "mesh": mesh,
