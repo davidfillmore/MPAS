@@ -53,18 +53,18 @@ class TerrainChargeCoupledSupercellPlotTests(unittest.TestCase):
         )
         expected = pathlib.Path(
             "~/Data/MPAS/poisson_charge_coupled_supercell_terrain_h1000/results/"
-            "terrain_charge_coupled_slice.png"
+            "terrain_charge_coupled_slice.pdf"
         ).expanduser()
 
         self.assertEqual(script.default_plot_path(output, section_mode="slice"), expected)
 
-    def test_plot_terrain_charge_coupled_output_writes_png(self):
+    def test_plot_terrain_charge_coupled_output_writes_pdf(self):
         script = load_script()
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
             output = tmp_path / "output.nc"
-            plot = tmp_path / "terrain_charge_coupled.png"
+            plot = tmp_path / "terrain_charge_coupled.pdf"
             write_synthetic_output(output)
 
             result = script.plot_terrain_charge_coupled_output(output, plot)

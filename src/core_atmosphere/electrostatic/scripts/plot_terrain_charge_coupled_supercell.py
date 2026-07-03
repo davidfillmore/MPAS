@@ -191,6 +191,8 @@ def plot_terrain_charge_coupled_output(
 
     plot_path = pathlib.Path(plot_path).expanduser()
     plot_path.parent.mkdir(parents=True, exist_ok=True)
+    # Vector PDF for publication figures (matplotlib infers the format from the
+    # suffix); dpi only affects any rasterized inset, harmless for pure vector.
     fig.savefig(plot_path, bbox_inches="tight", dpi=220)
     plt.close(fig)
     return plot_path
@@ -198,7 +200,7 @@ def plot_terrain_charge_coupled_output(
 
 def default_plot_path(output_nc, *, section_mode="slice"):
     output_nc = pathlib.Path(output_nc).expanduser()
-    name = f"terrain_charge_coupled_{section_mode}.png"
+    name = f"terrain_charge_coupled_{section_mode}.pdf"
     if output_nc.parent.name == "run":
         return output_nc.parent.parent / "results" / name
     return output_nc.with_name(name)
