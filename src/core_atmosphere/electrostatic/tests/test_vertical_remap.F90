@@ -3,6 +3,7 @@ program test_vertical_remap
    use mpas_kind_types, only : RKIND
    use mpas_electrostatic_vertical_remap, only : electrostatic_interp_mpas_to_poisson, &
                                                 electrostatic_interp_w_to_poisson_mid, &
+                                                electrostatic_interp_poisson_to_mpas, &
                                                 electrostatic_build_poisson_grid, &
                                                 electrostatic_build_poisson_fv_weights, &
                                                 electrostatic_remap_rho_conservative
@@ -11,6 +12,7 @@ program test_vertical_remap
 
    call test_linear_profile_exact()
    call test_inactive_poisson_levels_zero()
+   call test_poisson_to_mpas_ignores_inactive_source_levels()
    call test_w_interfaces_interpolate_to_poisson_midpoints()
    call test_build_poisson_grid_flat_matches_current_operator()
    call test_build_poisson_grid_terrain_clipping_and_sliver_merge()
@@ -55,6 +57,30 @@ contains
       if (abs(target(2,1) - 10.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: lower clamp mismatch"
       if (abs(target(3,1) - 20.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: interior interpolation mismatch"
    end subroutine test_inactive_poisson_levels_zero
+
+   subroutine test_poisson_to_mpas_ignores_inactive_source_levels()
+      integer, parameter :: nCells = 1, nVertLevels = 4
+      real(kind=RKIND) :: zPoisson(nVertLevels,nCells), zMpas(nVertLevels,nCells)
+      real(kind=RKIND) :: zGround(nCells), source(nVertLevels,nCells), target(nVertLevels,nCells)
+      logical :: active(nVertLevels,nCells)
+      integer :: kFirst(nCells)
+
+      zGround = 2.0_RKIND
+      kFirst = 2
+      active(:,1) = [.false., .true., .true., .true.]
+      zPoisson(:,1) = [0.0_RKIND, 3.0_RKIND, 5.0_RKIND, 7.0_RKIND]
+      source(:,1) = [0.0_RKIND, 10.0_RKIND, 20.0_RKIND, 30.0_RKIND]
+      zMpas(:,1) = [2.5_RKIND, 4.0_RKIND, 6.0_RKIND, 7.5_RKIND]
+
+      call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, zPoisson, zMpas, &
+                                                zGround, kFirst, active, source, target, &
+                                                lower_value=0.0_RKIND)
+
+      if (abs(target(1,1) - 5.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: ground-to-kFirst interpolation"
+      if (abs(target(2,1) - 15.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: active interior interpolation"
+      if (abs(target(3,1) - 25.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: upper active interpolation"
+      if (abs(target(4,1) - 30.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: upper clamp"
+   end subroutine test_poisson_to_mpas_ignores_inactive_source_levels
 
    subroutine test_w_interfaces_interpolate_to_poisson_midpoints()
       integer, parameter :: nCells = 1, nVertLevels = 2

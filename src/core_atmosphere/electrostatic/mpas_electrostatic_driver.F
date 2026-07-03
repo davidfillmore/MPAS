@@ -42,7 +42,8 @@ module mpas_electrostatic_driver
    use mpas_electrostatic_vertical_remap, only : electrostatic_build_poisson_grid, &
                                                  electrostatic_build_poisson_fv_weights, &
                                                  electrostatic_remap_rho_conservative, &
-                                                 electrostatic_interp_mpas_to_poisson
+                                                 electrostatic_interp_mpas_to_poisson, &
+                                                 electrostatic_interp_poisson_to_mpas
 
    implicit none
    private
@@ -1093,7 +1094,6 @@ contains
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, E_normal
       real(kind=RKIND), dimension(:,:,:), pointer :: E_vector
-      logical, allocatable :: activeTarget(:,:)
       real(kind=RKIND), pointer :: phi_ground
 
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
@@ -1127,21 +1127,27 @@ contains
                                                phi_ground, state_ptr % z_top, state_ptr % zGround, &
                                                state_ptr % kFirstActive, state_ptr % E_vertical)
 
-         allocate(activeTarget(nVertLevels,nCells))
          allocate(work(nVertLevels,nCells))
-         activeTarget = .true.
 
-         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
-                                                   state_ptr % zMid, activeTarget, state_ptr % E_x, work)
+         call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, state_ptr % zGround, &
+                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   state_ptr % E_x, work)
          state_ptr % E_x = work
-         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
-                                                   state_ptr % zMid, activeTarget, state_ptr % E_y, work)
+         call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, state_ptr % zGround, &
+                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   state_ptr % E_y, work)
          state_ptr % E_y = work
-         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
-                                                   state_ptr % zMid, activeTarget, state_ptr % E_z, work)
+         call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, state_ptr % zGround, &
+                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   state_ptr % E_z, work)
          state_ptr % E_z = work
-         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
-                                                   state_ptr % zMid, activeTarget, state_ptr % E_vertical, work)
+         call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, state_ptr % zGround, &
+                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   state_ptr % E_vertical, work)
          state_ptr % E_vertical = work
       else
          call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, state_ptr % zMid, &
@@ -1163,12 +1169,14 @@ contains
       if (state_ptr % zgrid_mode) then
          allocate(phiP(nVertLevels,nCells))
          phiP = phi
-         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
-                                                   state_ptr % zMid, activeTarget, phiP, work)
+         call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, state_ptr % zGround, &
+                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   phiP, work, lower_value=phi_ground)
          nPhiCells = min(size(phi, 2), size(work, 2))
          phi = 0.0_RKIND
          phi(:,1:nPhiCells) = work(:,1:nPhiCells)
-         deallocate(phiP, work, activeTarget)
+         deallocate(phiP, work)
       end if
 
    end subroutine postprocess_block_E

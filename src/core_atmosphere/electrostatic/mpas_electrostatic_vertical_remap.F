@@ -22,6 +22,7 @@ module mpas_electrostatic_vertical_remap
 
    public :: electrostatic_interp_mpas_to_poisson
    public :: electrostatic_interp_w_to_poisson_mid
+   public :: electrostatic_interp_poisson_to_mpas
    public :: electrostatic_build_poisson_grid
    public :: electrostatic_build_poisson_fv_weights
    public :: electrostatic_remap_rho_conservative
@@ -266,6 +267,73 @@ contains
       end do
 
    end subroutine electrostatic_interp_mpas_to_poisson
+
+!***********************************************************************
+!
+!  routine electrostatic_interp_poisson_to_mpas
+!
+!> \brief Interpolate active Poisson altitude levels back to MPAS midpoints
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, &
+                                                   zPoissonMid, zMpasMid, zGround, &
+                                                   kFirstActive, active, source, target, &
+                                                   lower_value)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zPoissonMid
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMpasMid
+      real(kind=RKIND), dimension(nCells), intent(in) :: zGround
+      integer, dimension(nCells), intent(in) :: kFirstActive
+      logical, dimension(nVertLevels,nCells), intent(in) :: active
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: source
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: target
+      real(kind=RKIND), intent(in), optional :: lower_value
+
+      integer :: iCell, k, kf, m
+      real(kind=RKIND) :: weight, zt
+
+      target = 0.0_RKIND
+
+      do iCell = 1, nCells
+         kf = kFirstActive(iCell)
+         if (kf < 1 .or. kf > nVertLevels) cycle
+
+         do k = 1, nVertLevels
+            zt = zMpasMid(k,iCell)
+
+            if (zt <= zPoissonMid(kf,iCell)) then
+               if (present(lower_value) .and. zPoissonMid(kf,iCell) > zGround(iCell)) then
+                  weight = max(0.0_RKIND, min(1.0_RKIND, &
+                           (zt - zGround(iCell)) / (zPoissonMid(kf,iCell) - zGround(iCell))))
+                  target(k,iCell) = (1.0_RKIND - weight) * lower_value + &
+                                    weight * source(kf,iCell)
+               else
+                  target(k,iCell) = source(kf,iCell)
+               end if
+            else if (zt >= zPoissonMid(nVertLevels,iCell)) then
+               target(k,iCell) = source(nVertLevels,iCell)
+            else
+               do m = kf, nVertLevels - 1
+                  if (.not. active(m,iCell) .or. .not. active(m+1,iCell)) cycle
+                  if (zt >= zPoissonMid(m,iCell) .and. zt <= zPoissonMid(m+1,iCell)) then
+                     if (zPoissonMid(m+1,iCell) <= zPoissonMid(m,iCell)) then
+                        target(k,iCell) = source(m,iCell)
+                     else
+                        weight = (zt - zPoissonMid(m,iCell)) / &
+                                 (zPoissonMid(m+1,iCell) - zPoissonMid(m,iCell))
+                        target(k,iCell) = (1.0_RKIND - weight) * source(m,iCell) + &
+                                          weight * source(m+1,iCell)
+                     end if
+                     exit
+                  end if
+               end do
+            end if
+         end do
+      end do
+
+   end subroutine electrostatic_interp_poisson_to_mpas
 
 !***********************************************************************
 !
