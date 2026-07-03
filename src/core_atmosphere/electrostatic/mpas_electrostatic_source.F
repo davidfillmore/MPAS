@@ -24,6 +24,8 @@ module mpas_electrostatic_source
    public :: electrostatic_fill_mms_cart_horizontal_source
    public :: electrostatic_fill_mms_sphere_source
    public :: electrostatic_fill_mms_sphere_horizontal_source
+   public :: electrostatic_fill_mms_terrain_source
+   public :: electrostatic_mms_terrain_phi_exact
    public :: electrostatic_fill_dipole_source
    public :: electrostatic_fill_tripole_source
    public :: electrostatic_fill_gaussian_monopole_source
@@ -267,6 +269,89 @@ contains
       end do
 
    end subroutine electrostatic_fill_mms_sphere_horizontal_source
+
+!***********************************************************************
+!
+!  function electrostatic_mms_terrain_phi_exact
+!
+!> \brief Exact cosine-hill terrain MMS potential
+!
+!-----------------------------------------------------------------------
+   real(kind=RKIND) function electrostatic_mms_terrain_phi_exact(x, y, z, x_period, y_period, &
+                                                                 z_top, hill_height)
+
+      real(kind=RKIND), intent(in) :: x
+      real(kind=RKIND), intent(in) :: y
+      real(kind=RKIND), intent(in) :: z
+      real(kind=RKIND), intent(in) :: x_period
+      real(kind=RKIND), intent(in) :: y_period
+      real(kind=RKIND), intent(in) :: z_top
+      real(kind=RKIND), intent(in) :: hill_height
+
+      real(kind=RKIND) :: kx, ky, s, u, pi
+
+      pi = acos(-1.0_RKIND)
+      kx = 2.0_RKIND * pi / x_period
+      ky = 2.0_RKIND * pi / y_period
+      s = hill_height * cos(kx*x) * cos(ky*y)
+      u = (z - s) / (z_top - s)
+      electrostatic_mms_terrain_phi_exact = sin(0.5_RKIND * pi * u)
+
+   end function electrostatic_mms_terrain_phi_exact
+
+!***********************************************************************
+!
+!  routine electrostatic_fill_mms_terrain_source
+!
+!> \brief Fill charge density for the cosine-hill terrain MMS case
+!
+!-----------------------------------------------------------------------
+   subroutine electrostatic_fill_mms_terrain_source(nCells, nVertLevels, xCell, yCell, zMidP, active, &
+                                                    epsilon0, x_period, y_period, z_top, hill_height, &
+                                                    rho_charge)
+
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nCells), intent(in) :: xCell
+      real(kind=RKIND), dimension(nCells), intent(in) :: yCell
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMidP
+      logical, dimension(nVertLevels,nCells), intent(in) :: active
+      real(kind=RKIND), intent(in) :: epsilon0
+      real(kind=RKIND), intent(in) :: x_period
+      real(kind=RKIND), intent(in) :: y_period
+      real(kind=RKIND), intent(in) :: z_top
+      real(kind=RKIND), intent(in) :: hill_height
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: rho_charge
+
+      integer :: iCell, k
+      real(kind=RKIND) :: pi, kx, ky, s, sx, sy, sxx_syy, u, w, gp, gpp, lap, hs
+
+      pi = acos(-1.0_RKIND)
+      kx = 2.0_RKIND * pi / x_period
+      ky = 2.0_RKIND * pi / y_period
+
+      rho_charge = 0.0_RKIND
+      do iCell = 1, nCells
+         s = hill_height * cos(kx*xCell(iCell)) * cos(ky*yCell(iCell))
+         sx = -hill_height * kx * sin(kx*xCell(iCell)) * cos(ky*yCell(iCell))
+         sy = -hill_height * ky * cos(kx*xCell(iCell)) * sin(ky*yCell(iCell))
+         sxx_syy = -(kx*kx + ky*ky) * s
+         hs = z_top - s
+
+         do k = 1, nVertLevels
+            if (.not. active(k,iCell)) cycle
+
+            u = (zMidP(k,iCell) - s) / hs
+            w = (zMidP(k,iCell) - z_top) / (hs * hs)
+            gp = 0.5_RKIND * pi * cos(0.5_RKIND * pi * u)
+            gpp = -(0.5_RKIND * pi)**2 * sin(0.5_RKIND * pi * u)
+            lap = gpp * ((sx*sx + sy*sy) * w*w + 1.0_RKIND / (hs*hs)) + &
+                  gp * (sxx_syy * w + 2.0_RKIND * (sx*sx + sy*sy) * w / hs)
+            rho_charge(k,iCell) = -epsilon0 * lap
+         end do
+      end do
+
+   end subroutine electrostatic_fill_mms_terrain_source
 
 !***********************************************************************
 !

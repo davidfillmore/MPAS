@@ -13,7 +13,9 @@ program test_mms_source
                                          electrostatic_fill_gaussian_dipole_y_source, &
                                          electrostatic_fill_gaussian_dipole_z_source, &
                                          electrostatic_fill_stub_source, &
-                                         electrostatic_select_stub_indices
+                                         electrostatic_select_stub_indices, &
+                                         electrostatic_fill_mms_terrain_source, &
+                                         electrostatic_mms_terrain_phi_exact
 
    implicit none
 
@@ -21,6 +23,7 @@ program test_mms_source
    call test_horizontal_mms_source_uses_discrete_vertical_operator()
    call test_sphere_mms_source_uses_boundary_compatible_vertical_basis()
    call test_sphere_horizontal_mms_source_uses_discrete_vertical_operator()
+   call test_mms_terrain_source_matches_fd_laplacian()
    call test_dipole_source_uses_explicit_center_with_expected_lobe_signs()
    call test_tripole_source_uses_explicit_center_with_expected_lobe_signs()
    call test_gaussian_monopole_source_is_centered_and_positive()
@@ -188,6 +191,41 @@ contains
       if (abs(rho_charge(2,1) - expected2) > 1.0e-24_RKIND) &
          stop "FAIL: spherical horizontal MMS top-level source mismatch"
    end subroutine test_sphere_horizontal_mms_source_uses_discrete_vertical_operator
+
+   subroutine test_mms_terrain_source_matches_fd_laplacian()
+      real(kind=RKIND), parameter :: Lx = 10000.0_RKIND, Ly = 10000.0_RKIND
+      real(kind=RKIND), parameter :: ztop = 5000.0_RKIND, h0 = 500.0_RKIND
+      real(kind=RKIND), parameter :: eps0 = 8.8541878128e-12_RKIND
+      real(kind=RKIND), parameter :: hfd = 0.5_RKIND
+      real(kind=RKIND) :: x0, y0, z0, lap_fd, rho_expected, rho(1,1)
+      real(kind=RKIND) :: xc(1), yc(1), zm(1,1)
+      logical :: act(1,1)
+
+      x0 = 1234.0_RKIND
+      y0 = 2345.0_RKIND
+      z0 = 2500.0_RKIND
+      lap_fd = (phi_t(x0+hfd,y0,z0) - 2.0_RKIND*phi_t(x0,y0,z0) + phi_t(x0-hfd,y0,z0) &
+              + phi_t(x0,y0+hfd,z0) - 2.0_RKIND*phi_t(x0,y0,z0) + phi_t(x0,y0-hfd,z0) &
+              + phi_t(x0,y0,z0+hfd) - 2.0_RKIND*phi_t(x0,y0,z0) + phi_t(x0,y0,z0-hfd)) / hfd**2
+      rho_expected = -eps0 * lap_fd
+
+      xc = x0
+      yc = y0
+      zm(1,1) = z0
+      act = .true.
+      call electrostatic_fill_mms_terrain_source(1, 1, xc, yc, zm, act, eps0, Lx, Ly, ztop, h0, rho)
+      if (abs(rho(1,1) - rho_expected) > 1.0e-6_RKIND * max(abs(rho_expected), 1.0e-30_RKIND)) &
+         stop "FAIL: mms_terrain rho vs FD Laplacian"
+
+   contains
+
+      real(kind=RKIND) function phi_t(x, y, z)
+         real(kind=RKIND), intent(in) :: x, y, z
+
+         phi_t = electrostatic_mms_terrain_phi_exact(x, y, z, Lx, Ly, ztop, h0)
+      end function phi_t
+
+   end subroutine test_mms_terrain_source_matches_fd_laplacian
 
    subroutine test_dipole_source_uses_explicit_center_with_expected_lobe_signs()
       integer, parameter :: nCells = 3, nVertLevels = 3
