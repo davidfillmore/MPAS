@@ -69,6 +69,7 @@ module mpas_electrostatic_driver
       real(kind=RKIND), allocatable :: zMidPC(:,:)
       real(kind=RKIND), allocatable :: airThickness(:,:)
       real(kind=RKIND), allocatable :: wallWeight(:,:)
+      real(kind=RKIND), allocatable :: work(:,:)   ! per-solve scratch: rhs source buffer + back-remap target
       real(kind=RKIND), allocatable :: rhoP(:,:)
       integer, allocatable :: kFirstActive(:)
       logical, allocatable :: active(:,:)
@@ -226,6 +227,7 @@ contains
          if (allocated(state_ptr % zMidPC)) deallocate(state_ptr % zMidPC)
          if (allocated(state_ptr % airThickness)) deallocate(state_ptr % airThickness)
          if (allocated(state_ptr % wallWeight)) deallocate(state_ptr % wallWeight)
+         if (allocated(state_ptr % work)) deallocate(state_ptr % work)
          if (allocated(state_ptr % rhoP)) deallocate(state_ptr % rhoP)
          if (allocated(state_ptr % kFirstActive)) deallocate(state_ptr % kFirstActive)
          if (allocated(state_ptr % active)) deallocate(state_ptr % active)
@@ -450,7 +452,7 @@ contains
       integer, pointer :: nCells_ptr, nEdges_ptr, nVertLevels_ptr, maxEdges_ptr
       integer, pointer :: nCellsSolve_ptr
       integer, pointer :: max_iter
-      integer :: nCells, nEdges, nVertLevels, maxEdges, preconditioner, k
+      integer :: nCells, nEdges, nVertLevels, maxEdges, preconditioner, k, nDiagCells
       real(kind=RKIND) :: dzP
       integer, dimension(:), pointer :: nEdgesOnCell
       integer, dimension(:,:), pointer :: cellsOnCell, edgesOnCell, cellsOnEdge
@@ -458,6 +460,7 @@ contains
       real(kind=RKIND), dimension(:), pointer :: xCell, yCell
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, rho_charge, E_normal
+      real(kind=RKIND), dimension(:,:), pointer :: poisson_zmid, poisson_air_thickness
       real(kind=RKIND), dimension(:,:,:), pointer :: E_vector
       real(kind=RKIND), pointer :: tol
       real(kind=RKIND), pointer :: mesh_x_period, mesh_y_period
@@ -508,6 +511,7 @@ contains
       allocate(state_ptr % zMidPC(nVertLevels,nCells))
       allocate(state_ptr % airThickness(nVertLevels,nCells))
       allocate(state_ptr % wallWeight(nVertLevels,nCells))
+      allocate(state_ptr % work(nVertLevels,nCells))
       allocate(state_ptr % kFirstActive(nCells))
       allocate(state_ptr % active(nVertLevels,nCells))
       allocate(state_ptr % E_vertical(nVertLevels,nCells))
@@ -599,15 +603,29 @@ contains
       state_ptr % E_z = 0.0_RKIND
       state_ptr % E_zonal = 0.0_RKIND
       state_ptr % E_meridional = 0.0_RKIND
+      state_ptr % work = 0.0_RKIND
 
       call mpas_pool_get_array(es_pool, 'phi', phi)
       call mpas_pool_get_array(es_pool, 'rho_charge', rho_charge)
       call mpas_pool_get_array(es_pool, 'E_normal', E_normal)
       call mpas_pool_get_array(es_pool, 'E_vector', E_vector)
+      call mpas_pool_get_array(es_pool, 'poisson_zmid', poisson_zmid)
+      call mpas_pool_get_array(es_pool, 'poisson_air_thickness', poisson_air_thickness)
       phi = 0.0_RKIND
       rho_charge = 0.0_RKIND
       E_normal = 0.0_RKIND
       E_vector = 0.0_RKIND
+
+      ! Poisson-grid diagnostics are time-invariant geometry (written once by
+      ! the grid builder above); fill the registry fields here rather than
+      ! every solve. The min clamp is load-bearing -- pool arrays carry the
+      ! +1 garbage column.
+      nDiagCells = min(size(poisson_zmid, 2), size(state_ptr % zMidPC, 2))
+      poisson_zmid = 0.0_RKIND
+      poisson_air_thickness = 0.0_RKIND
+      poisson_zmid(:,1:nDiagCells) = state_ptr % zMidPC(:,1:nDiagCells)
+      poisson_air_thickness(:,1:nDiagCells) = state_ptr % airThickness(:,1:nDiagCells)
+
       call set_solver_diagnostics(es_pool, 0, 0.0_RKIND, 0.0_RKIND)
 
       deallocate(areaMetric)
@@ -632,18 +650,16 @@ contains
       type(mpas_pool_type), pointer :: mesh_pool, es_pool, state_pool
       integer, pointer :: nCells_ptr, nVertLevels_ptr
       integer, pointer :: num_scalars_ptr, index_qc_ptr, index_qr_ptr, index_qi_ptr, index_qg_ptr
-      integer :: nCells, nVertLevels, nDiagCells, stub_negative_index, stub_positive_index
+      integer :: nCells, nVertLevels, stub_negative_index, stub_positive_index
       real(kind=RKIND), dimension(:), pointer :: latCell, lonCell, xCell, yCell
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, rho_charge
-      real(kind=RKIND), dimension(:,:), pointer :: poisson_zmid, poisson_air_thickness
       real(kind=RKIND), dimension(:,:), pointer :: w
       real(kind=RKIND), dimension(:,:,:), pointer :: scalars
       real(kind=RKIND), pointer :: phi_ground
       real(kind=RKIND), pointer :: source_charge, source_sigma, dipole_separation
       real(kind=RKIND), pointer :: hill_height
       real(kind=RKIND), pointer :: stub_alpha, stub_beta
-      logical, allocatable :: activeAll(:,:)
       character(len=StrKIND), pointer :: source_name
 
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
@@ -669,8 +685,6 @@ contains
       call mpas_pool_get_array(state_pool, 'scalars', scalars, 1)
       call mpas_pool_get_array(es_pool, 'phi', phi)
       call mpas_pool_get_array(es_pool, 'rho_charge', rho_charge)
-      call mpas_pool_get_array(es_pool, 'poisson_zmid', poisson_zmid)
-      call mpas_pool_get_array(es_pool, 'poisson_air_thickness', poisson_air_thickness)
 
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_source', source_name)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_bc_ground', phi_ground)
@@ -704,17 +718,14 @@ contains
                messageType=MPAS_LOG_CRIT)
          else
             call electrostatic_fill_mms_terrain_source(nCells, nVertLevels, xCell, yCell, &
-                                                       state_ptr % zMidPC, state_ptr % active, &
-                                                       epsilon0, state_ptr % x_period, &
-                                                       state_ptr % y_period, state_ptr % z_top, &
-                                                       hill_height, state_ptr % rhoP)
-            allocate(activeAll(nVertLevels,nCells))
-            activeAll = .true.
+                                                       state_ptr % zMidPC, epsilon0, &
+                                                       state_ptr % x_period, state_ptr % y_period, &
+                                                       state_ptr % z_top, hill_height, &
+                                                       state_ptr % rhoP, active=state_ptr % active)
             call electrostatic_fill_mms_terrain_source(nCells, nVertLevels, xCell, yCell, &
-                                                       state_ptr % zMid, activeAll, epsilon0, &
+                                                       state_ptr % zMid, epsilon0, &
                                                        state_ptr % x_period, state_ptr % y_period, &
                                                        state_ptr % z_top, hill_height, rho_charge)
-            deallocate(activeAll)
          end if
       case ('mms_cart_horizontal')
          call electrostatic_fill_mms_cart_horizontal_source(nCells, nVertLevels, xCell, yCell, &
@@ -800,12 +811,6 @@ contains
       else
          state_ptr % x = phi
       end if
-
-      nDiagCells = min(size(poisson_zmid, 2), size(state_ptr % zMidPC, 2))
-      poisson_zmid = 0.0_RKIND
-      poisson_air_thickness = 0.0_RKIND
-      poisson_zmid(:,1:nDiagCells) = state_ptr % zMidPC(:,1:nDiagCells)
-      poisson_air_thickness(:,1:nDiagCells) = state_ptr % airThickness(:,1:nDiagCells)
 
    end subroutine prepare_block_potential_rhs
 
@@ -1159,7 +1164,6 @@ contains
       integer :: iCell, k, nCells, nEdges, nPhiCells, nVertLevels
       integer, dimension(:,:), pointer :: cellsOnEdge
       real(kind=RKIND), dimension(:), pointer :: dcEdge
-      real(kind=RKIND), allocatable :: phiP(:,:), work(:,:)
       real(kind=RKIND), dimension(:,:), pointer :: localVerticalUnitVectors
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, E_normal
@@ -1198,28 +1202,10 @@ contains
                                                phi_ground, state_ptr % z_top, state_ptr % zGround, &
                                                state_ptr % kFirstActive, state_ptr % E_vertical)
 
-         allocate(work(nVertLevels,nCells))
-
-         call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
-                                                   state_ptr % zMid, state_ptr % zGround, &
-                                                   state_ptr % kFirstActive, &
-                                                   state_ptr % E_x, work)
-         state_ptr % E_x = work
-         call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
-                                                   state_ptr % zMid, state_ptr % zGround, &
-                                                   state_ptr % kFirstActive, &
-                                                   state_ptr % E_y, work)
-         state_ptr % E_y = work
-         call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
-                                                   state_ptr % zMid, state_ptr % zGround, &
-                                                   state_ptr % kFirstActive, &
-                                                   state_ptr % E_z, work)
-         state_ptr % E_z = work
-         call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
-                                                   state_ptr % zMid, state_ptr % zGround, &
-                                                   state_ptr % kFirstActive, &
-                                                   state_ptr % E_vertical, work)
-         state_ptr % E_vertical = work
+         call backremap_field_to_mpas(state_ptr, nCells, nVertLevels, state_ptr % E_x)
+         call backremap_field_to_mpas(state_ptr, nCells, nVertLevels, state_ptr % E_y)
+         call backremap_field_to_mpas(state_ptr, nCells, nVertLevels, state_ptr % E_z)
+         call backremap_field_to_mpas(state_ptr, nCells, nVertLevels, state_ptr % E_vertical)
       else
          call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, state_ptr % zMid, &
                                                phi_ground, state_ptr % z_top, state_ptr % zGround, &
@@ -1238,19 +1224,42 @@ contains
       end do
 
       if (state_ptr % zgrid_mode) then
-         allocate(phiP(nVertLevels,nCells))
-         phiP = phi
+         ! Registry phi is (nVertLevels, nCells+1) with a garbage column;
+         ! passing it straight to the (nVertLevels,nCells) intent(in) source
+         ! dummy sequence-associates the first nCells columns -- the same
+         ! values the former reallocating phiP = phi copy produced.
          call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
                                                    state_ptr % zMid, state_ptr % zGround, &
                                                    state_ptr % kFirstActive, &
-                                                   phiP, work, lower_value=phi_ground)
-         nPhiCells = min(size(phi, 2), size(work, 2))
+                                                   phi, state_ptr % work, lower_value=phi_ground)
+         nPhiCells = min(size(phi, 2), size(state_ptr % work, 2))
          phi = 0.0_RKIND
-         phi(:,1:nPhiCells) = work(:,1:nPhiCells)
-         deallocate(phiP, work)
+         phi(:,1:nPhiCells) = state_ptr % work(:,1:nPhiCells)
       end if
 
    end subroutine postprocess_block_E
+
+!***********************************************************************
+!
+!  routine backremap_field_to_mpas
+!
+!> \brief Remap one solver-grid field to MPAS midpoints in place
+!
+!-----------------------------------------------------------------------
+   subroutine backremap_field_to_mpas(state_ptr, nCells, nVertLevels, field)
+
+      type(electrostatic_block_state), pointer, intent(in) :: state_ptr
+      integer, intent(in) :: nCells
+      integer, intent(in) :: nVertLevels
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(inout) :: field
+
+      call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                state_ptr % zMid, state_ptr % zGround, &
+                                                state_ptr % kFirstActive, &
+                                                field, state_ptr % work)
+      field = state_ptr % work
+
+   end subroutine backremap_field_to_mpas
 
 !***********************************************************************
 !

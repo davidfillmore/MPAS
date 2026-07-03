@@ -63,7 +63,8 @@ contains
                                                    x_period, y_period, z_top)
       expected = coeff * phi_exact
 
-      if (abs(rho_charge(1,1) - expected) > 1.0e-20_RKIND) stop "FAIL: MMS charge source mismatch"
+      if (abs(rho_charge(1,1) - expected) > 1.0e-12_RKIND * max(abs(expected), 1.0e-30_RKIND)) &
+         stop "FAIL: MMS charge source mismatch"
       if (abs(electrostatic_mms_cart_phi_exact(xCell(1), yCell(1), 0.0_RKIND, &
                                                x_period, y_period, z_top)) > 1.0e-14_RKIND) &
          stop "FAIL: MMS exact potential is not grounded"
@@ -116,9 +117,9 @@ contains
       expected2 = horizontal_coeff * phi2 + &
                   (v_weight_lower(2,1) * (phi2 - phi1)) / volume(2,1)
 
-      if (abs(rho_charge(1,1) - expected1) > 1.0e-20_RKIND) &
+      if (abs(rho_charge(1,1) - expected1) > 1.0e-12_RKIND * max(abs(expected1), 1.0e-30_RKIND)) &
          stop "FAIL: horizontal MMS first-level source mismatch"
-      if (abs(rho_charge(2,1) - expected2) > 1.0e-20_RKIND) &
+      if (abs(rho_charge(2,1) - expected2) > 1.0e-12_RKIND * max(abs(expected2), 1.0e-30_RKIND)) &
          stop "FAIL: horizontal MMS top-level source mismatch"
    end subroutine test_horizontal_mms_source_uses_discrete_vertical_operator
 
@@ -186,9 +187,9 @@ contains
       expected2 = horizontal_coeff * phi2 + &
                   (v_weight_lower(2,1) * (phi2 - phi1)) / volume(2,1)
 
-      if (abs(rho_charge(1,1) - expected1) > 1.0e-24_RKIND) &
+      if (abs(rho_charge(1,1) - expected1) > 1.0e-12_RKIND * max(abs(expected1), 1.0e-30_RKIND)) &
          stop "FAIL: spherical horizontal MMS first-level source mismatch"
-      if (abs(rho_charge(2,1) - expected2) > 1.0e-24_RKIND) &
+      if (abs(rho_charge(2,1) - expected2) > 1.0e-12_RKIND * max(abs(expected2), 1.0e-30_RKIND)) &
          stop "FAIL: spherical horizontal MMS top-level source mismatch"
    end subroutine test_sphere_horizontal_mms_source_uses_discrete_vertical_operator
 
@@ -197,7 +198,7 @@ contains
       real(kind=RKIND), parameter :: ztop = 5000.0_RKIND, h0 = 500.0_RKIND
       real(kind=RKIND), parameter :: eps0 = 8.8541878128e-12_RKIND
       real(kind=RKIND), parameter :: hfd = 0.5_RKIND
-      real(kind=RKIND) :: x0, y0, z0, lap_fd, rho_expected, rho(1,1)
+      real(kind=RKIND) :: x0, y0, z0, lap_fd, rho_expected, rho(1,1), rho_masked(1,1)
       real(kind=RKIND) :: xc(1), yc(1), zm(1,1)
       logical :: act(1,1)
 
@@ -212,10 +213,17 @@ contains
       xc = x0
       yc = y0
       zm(1,1) = z0
-      act = .true.
-      call electrostatic_fill_mms_terrain_source(1, 1, xc, yc, zm, act, eps0, Lx, Ly, ztop, h0, rho)
+
+      ! active absent = every level filled
+      call electrostatic_fill_mms_terrain_source(1, 1, xc, yc, zm, eps0, Lx, Ly, ztop, h0, rho)
       if (abs(rho(1,1) - rho_expected) > 1.0e-6_RKIND * max(abs(rho_expected), 1.0e-30_RKIND)) &
          stop "FAIL: mms_terrain rho vs FD Laplacian"
+
+      ! explicit mask still honored
+      act = .false.
+      call electrostatic_fill_mms_terrain_source(1, 1, xc, yc, zm, eps0, Lx, Ly, ztop, h0, &
+                                                 rho_masked, active=act)
+      if (abs(rho_masked(1,1)) > 0.0_RKIND) stop "FAIL: masked level must stay zero"
 
    contains
 

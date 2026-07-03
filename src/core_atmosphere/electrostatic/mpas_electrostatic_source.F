@@ -306,22 +306,22 @@ contains
 !> \brief Fill charge density for the cosine-hill terrain MMS case
 !
 !-----------------------------------------------------------------------
-   subroutine electrostatic_fill_mms_terrain_source(nCells, nVertLevels, xCell, yCell, zMidP, active, &
+   subroutine electrostatic_fill_mms_terrain_source(nCells, nVertLevels, xCell, yCell, zMidP, &
                                                     epsilon0, x_period, y_period, z_top, hill_height, &
-                                                    rho_charge)
+                                                    rho_charge, active)
 
       integer, intent(in) :: nCells
       integer, intent(in) :: nVertLevels
       real(kind=RKIND), dimension(nCells), intent(in) :: xCell
       real(kind=RKIND), dimension(nCells), intent(in) :: yCell
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMidP
-      logical, dimension(nVertLevels,nCells), intent(in) :: active
       real(kind=RKIND), intent(in) :: epsilon0
       real(kind=RKIND), intent(in) :: x_period
       real(kind=RKIND), intent(in) :: y_period
       real(kind=RKIND), intent(in) :: z_top
       real(kind=RKIND), intent(in) :: hill_height
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: rho_charge
+      logical, dimension(nVertLevels,nCells), intent(in), optional :: active
 
       integer :: iCell, k
       real(kind=RKIND) :: pi, kx, ky, s, sx, sy, sxx_syy, u, w, gp, gpp, lap, hs
@@ -339,7 +339,9 @@ contains
          hs = z_top - s
 
          do k = 1, nVertLevels
-            if (.not. active(k,iCell)) cycle
+            if (present(active)) then
+               if (.not. active(k,iCell)) cycle
+            end if
 
             u = (zMidP(k,iCell) - s) / hs
             w = (zMidP(k,iCell) - z_top) / (hs * hs)
