@@ -17,6 +17,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import run_charge_coupled_supercell as charge_supercell  # noqa: E402
+import run_terrain_zgrid_mms as terrain_gate  # noqa: E402
 import run_tier_A1_cartesian_mms as tier_a1  # noqa: E402
 from run_tripole_supercell import seed_run_dir_from_template  # noqa: E402
 
@@ -308,8 +309,9 @@ def rewrite_supercell_init_terrain(init_nc, *, hill_height, hill_half_width_m):
 
         zeta = np.linspace(0.0, ztop, nlevels_p1)
         # Terrain-following column map (run-plots plan Design; identical to
-        # the Fortran zgrid with ah(k)=1, hx=ter — mpas_init_atm_cases.F:1673)
-        znew = terrain[:, None] + zeta[None, :] * (ztop - terrain[:, None]) / ztop
+        # the Fortran zgrid with ah(k)=1, hx=ter — mpas_init_atm_cases.F:1673).
+        # Shared single source with the MMS gate runner (finding #13).
+        znew = terrain_gate.terrain_following_columns(zeta, terrain, ztop)
 
         # Recompute every zgrid-derived metric (review finding #9): the
         # atmosphere core reads zz/zxu/zb/zb3 from the init stream and
@@ -360,24 +362,6 @@ def seed_terrain_run_dir(template_run_dir, run_dir):
     shutil.copy2(source, target)
 
 
-def add_terrain_namelist_keys(run_dir):
-    """Enable terrain zgrid electrostatics in namelist.atmosphere.
-
-    Finding #17: config_electrostatic_hill_height is deliberately not
-    written — the driver reads it only for source='mms_terrain', while the
-    supercell runs source='stub' with the hill baked into supercell_init.nc.
-    """
-    namelist = run_dir / "namelist.atmosphere"
-    text = namelist.read_text()
-    text = tier_a1.set_namelist_value(
-        text,
-        "electrostatic",
-        "config_electrostatic_terrain_mode",
-        "'zgrid'",
-    )
-    namelist.write_text(text)
-
-
 def prepare_run_dir(
     *,
     template_run_dir,
@@ -423,7 +407,7 @@ def prepare_run_dir(
         poisson_max_iter=poisson_max_iter,
         solve_at_init=solve_at_init,
     )
-    add_terrain_namelist_keys(run_dir)
+    terrain_gate.enable_zgrid_terrain(run_dir / "namelist.atmosphere")
     charge_supercell.configure_streams(streams, output_interval)
     charge_supercell.ensure_coupled_output_stream_list(
         run_dir / "stream_list.atmosphere.output"

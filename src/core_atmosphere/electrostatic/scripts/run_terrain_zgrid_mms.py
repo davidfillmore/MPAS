@@ -149,6 +149,28 @@ def build_variant_bundle(
     a2.run_init_atmosphere(dst_dir, init_model, ranks, mpiexec, force)
 
 
+def terrain_following_columns(zeta, terrain, ztop):
+    """Linear terrain-following map z(i,k) = ter_i + zeta_k*(ztop-ter_i)/ztop.
+
+    Single source for the column map used by the MMS gate and the terrain
+    supercell runner (review finding #13); identical to the init core's
+    zgrid with ah(k)=1, hx=ter (mpas_init_atm_cases.F:1673). Canonical
+    (nCells, nLevelsP1) orientation.
+    """
+    zeta = np.asarray(zeta, dtype=float)
+    terrain = np.asarray(terrain, dtype=float)
+    return terrain[:, None] + zeta[None, :] * (ztop - terrain[:, None]) / ztop
+
+
+def enable_zgrid_terrain(namelist_path):
+    """Set config_electrostatic_terrain_mode = 'zgrid' (shared by both runners)."""
+    text = namelist_path.read_text()
+    text = a1.set_namelist_value(
+        text, "electrostatic", "config_electrostatic_terrain_mode", "'zgrid'"
+    )
+    namelist_path.write_text(text)
+
+
 def rewrite_zgrid_terrain(init_nc, *, hill_height, ztop):
     """Impose analytic terrain-following columns on init.nc, idempotently."""
     with nc.Dataset(init_nc, "r+") as dataset:
@@ -167,23 +189,14 @@ def rewrite_zgrid_terrain(init_nc, *, hill_height, ztop):
 
         terrain = cosine_hill_terrain(xcell, ycell, x_period, y_period, hill_height)
         zeta = np.linspace(0.0, ztop, nlevels_p1)
-
-        if level_axis == 1:
-            znew = zeta[None, :] + terrain[:, None] * (1.0 - zeta[None, :] / ztop)
-        else:
-            znew = zeta[:, None] + terrain[None, :] * (1.0 - zeta[:, None] / ztop)
-        zgrid[:] = znew
+        znew = terrain_following_columns(zeta, terrain, ztop)
+        zgrid[:] = znew if level_axis == 1 else znew.T
 
 
 def add_terrain_namelist_keys(run_dir, hill_height):
     namelist = run_dir / "namelist.atmosphere"
+    enable_zgrid_terrain(namelist)
     text = namelist.read_text()
-    text = a1.set_namelist_value(
-        text,
-        "electrostatic",
-        "config_electrostatic_terrain_mode",
-        "'zgrid'",
-    )
     text = a1.set_namelist_value(
         text,
         "electrostatic",

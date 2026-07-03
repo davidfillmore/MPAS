@@ -148,20 +148,16 @@ class TerrainChargeCoupledSupercellScriptTests(unittest.TestCase):
             self.assertTrue(init_path.exists())
             self.assertEqual(init_path.read_bytes(), original)
 
-    def test_terrain_namelist_enables_zgrid_without_inert_hill_key(self):
-        # Finding #17: config_electrostatic_hill_height is read by the
-        # driver only for source='mms_terrain'; the supercell runs
-        # source='stub' with the hill baked into supercell_init.nc.
+    def test_terrain_helpers_come_from_gate_runner(self):
+        # Finding #13: single source for the namelist key and column map.
         script = load_script()
+        self.assertFalse(hasattr(script, "add_terrain_namelist_keys"))
+        gate = script.terrain_gate
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = pathlib.Path(tmp)
-            namelist = run_dir / "namelist.atmosphere"
+            namelist = pathlib.Path(tmp) / "namelist.atmosphere"
             namelist.write_text("&nhyd_model\n/\n")
-
-            script.add_terrain_namelist_keys(run_dir)
-
+            gate.enable_zgrid_terrain(namelist)
             text = namelist.read_text()
-
         self.assertIn("config_electrostatic_terrain_mode = 'zgrid'", text)
         self.assertNotIn("config_electrostatic_hill_height", text)
 

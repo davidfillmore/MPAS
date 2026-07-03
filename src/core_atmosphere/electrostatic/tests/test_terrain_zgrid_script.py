@@ -181,6 +181,27 @@ class TestTerrainZgridScript(unittest.TestCase):
                 zhill2 = np.asarray(dataset.variables["zgrid"][:])
             self.assertLess(float(np.abs(zhill2 - expected).max()), 1.0e-10)
 
+    def test_shared_terrain_helpers(self):
+        script = self.script
+        zeta = np.linspace(0.0, 20000.0, 5)
+        terrain = np.array([0.0, 1000.0])
+
+        znew = script.terrain_following_columns(zeta, terrain, 20000.0)
+
+        self.assertEqual(znew.shape, (2, 5))
+        self.assertTrue(np.allclose(znew[0], zeta))          # flat column
+        self.assertAlmostEqual(float(znew[1, 0]), 1000.0)    # ground = terrain
+        self.assertTrue(np.allclose(znew[:, -1], 20000.0))   # top = ztop
+        self.assertTrue(np.all(np.diff(znew, axis=1) > 0.0))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            namelist = pathlib.Path(tmp) / "namelist.atmosphere"
+            namelist.write_text("&nhyd_model\n/\n")
+            script.enable_zgrid_terrain(namelist)
+            text = namelist.read_text()
+        self.assertIn("config_electrostatic_terrain_mode = 'zgrid'", text)
+        self.assertNotIn("config_electrostatic_hill_height", text)
+
     def test_terrain_and_phi_match_fortran_goldens(self):
         # Cross-language pin: the same three phi goldens are asserted in
         # tests/test_mms_source.F90
