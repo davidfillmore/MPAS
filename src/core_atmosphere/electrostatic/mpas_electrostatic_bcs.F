@@ -33,18 +33,21 @@ contains
 !> \brief Add ground Dirichlet potential contributions to the RHS
 !
 !-----------------------------------------------------------------------
-   subroutine electrostatic_apply_ground_rhs(nCells, nVertLevels, phi_ground, v_weight_lower, rhs)
+   subroutine electrostatic_apply_ground_rhs(nCells, nVertLevels, phi_ground, v_weight_lower, rhs, kFirstActive)
 
       integer, intent(in) :: nCells
       integer, intent(in) :: nVertLevels
       real(kind=RKIND), intent(in) :: phi_ground
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: v_weight_lower
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(inout) :: rhs
+      integer, dimension(nCells), intent(in), optional :: kFirstActive
 
-      integer :: iCell
+      integer :: iCell, kf
 
       do iCell = 1, nCells
-         rhs(1,iCell) = rhs(1,iCell) + v_weight_lower(1,iCell) * phi_ground
+         kf = 1
+         if (present(kFirstActive)) kf = kFirstActive(iCell)
+         rhs(kf,iCell) = rhs(kf,iCell) + v_weight_lower(kf,iCell) * phi_ground
       end do
 
    end subroutine electrostatic_apply_ground_rhs

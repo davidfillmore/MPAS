@@ -491,6 +491,10 @@
                      units="m"
                      description="Cosine-hill amplitude for the terrain MMS benchmark source."/>
 
+                <nml_option name="config_electrostatic_terrain_mode" type="character" default_value="reject"
+                     possible_values="reject,zgrid"
+                     description="Terrain handling: reject terrain-following meshes or solve on a uniform altitude grid with conservative charge remap. Flat meshes use the altitude-grid builder path regardless of this setting."/>
+
                 <nml_option name="config_stub_alpha" type="real" default_value="1.0e-8"
                      units="C s kg^{-1} m^{-4}"
                      description="Tunable coefficient for the updraft-positive-hydrometeor term in the diagnostic electrification stub."/>

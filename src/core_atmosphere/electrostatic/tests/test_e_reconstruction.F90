@@ -67,6 +67,16 @@ contains
       if (abs(rhs(1,1) - 10.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: ground RHS first cell mismatch"
       if (abs(rhs(1,2) - 15.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: ground RHS second cell mismatch"
       if (any(abs(rhs(2:nVertLevels,:)) > 1.0e-14_RKIND)) stop "FAIL: ground RHS changed non-ground levels"
+
+      rhs = 0.0_RKIND
+      v_weight_lower = 0.0_RKIND
+      v_weight_lower(2,1) = 4.0_RKIND
+      v_weight_lower(1,2) = 3.0_RKIND
+      call electrostatic_apply_ground_rhs(nCells, nVertLevels, 5.0_RKIND, v_weight_lower, rhs, &
+                                          kFirstActive=[2, 1])
+      if (abs(rhs(2,1) - 20.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: lifted ground RHS cell 1"
+      if (abs(rhs(1,2) - 15.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: flat ground RHS cell 2"
+      if (abs(rhs(1,1)) > 0.0_RKIND) stop "FAIL: buried level received ground RHS"
    end subroutine test_ground_rhs_only_modifies_bottom_level
 
    subroutine test_horizontal_metric_scale_respects_mesh_geometry()

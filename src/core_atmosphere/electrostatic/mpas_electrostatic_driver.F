@@ -18,10 +18,11 @@ module mpas_electrostatic_driver
    use mpas_kind_types, only : RKIND, StrKIND
    use mpas_pool_routines
    use mpas_log, only : mpas_log_write
-   use mpas_dmpar, only : mpas_dmpar_sum_real, mpas_dmpar_min_real, mpas_dmpar_max_real
+   use mpas_dmpar, only : mpas_dmpar_sum_real, mpas_dmpar_min_real, mpas_dmpar_max_real, &
+                          mpas_dmpar_max_int
    use mpas_atm_halos, only : exchange_halo_group
    use mpas_vector_reconstruction, only : mpas_reconstruct
-   use mpas_elliptic_operator, only : mpas_elliptic_operator_type, elliptic_operator_init
+   use mpas_elliptic_operator, only : mpas_elliptic_operator_type, elliptic_operator_init_from_weights
    use mpas_pcg_solver, only : mpas_pcg_solver_type, pcg_init, PC_NONE, PC_JACOBI
    use mpas_electrostatic_bcs, only : electrostatic_apply_ground_rhs, &
                                       electrostatic_compute_vertical_E, &
@@ -30,6 +31,7 @@ module mpas_electrostatic_driver
                                          electrostatic_fill_mms_cart_horizontal_source, &
                                          electrostatic_fill_mms_sphere_source, &
                                          electrostatic_fill_mms_sphere_horizontal_source, &
+                                         electrostatic_fill_mms_terrain_source, &
                                          electrostatic_fill_dipole_source, &
                                          electrostatic_fill_tripole_source, &
                                          electrostatic_fill_gaussian_monopole_source, &
@@ -37,6 +39,10 @@ module mpas_electrostatic_driver
                                          electrostatic_fill_gaussian_dipole_z_source, &
                                          electrostatic_fill_stub_source, &
                                          electrostatic_select_stub_indices
+   use mpas_electrostatic_vertical_remap, only : electrostatic_build_poisson_grid, &
+                                                 electrostatic_build_poisson_fv_weights, &
+                                                 electrostatic_remap_rho_conservative, &
+                                                 electrostatic_interp_mpas_to_poisson
 
    implicit none
    private
@@ -52,9 +58,17 @@ module mpas_electrostatic_driver
       type(mpas_elliptic_operator_type) :: op
       type(mpas_pcg_solver_type) :: solver
       integer :: nCellsSolve = 0
+      logical :: zgrid_mode = .false.
       real(kind=RKIND), allocatable :: rhs(:,:)
       real(kind=RKIND), allocatable :: x(:,:)
       real(kind=RKIND), allocatable :: zMid(:,:)
+      real(kind=RKIND), allocatable :: zGround(:)
+      real(kind=RKIND), allocatable :: zFaceP(:)
+      real(kind=RKIND), allocatable :: zMidPC(:,:)
+      real(kind=RKIND), allocatable :: airThickness(:,:)
+      real(kind=RKIND), allocatable :: rhoP(:,:)
+      integer, allocatable :: kFirstActive(:)
+      logical, allocatable :: active(:,:)
       real(kind=RKIND), allocatable :: E_vertical(:,:)
       real(kind=RKIND), allocatable :: E_x(:,:)
       real(kind=RKIND), allocatable :: E_y(:,:)
@@ -89,7 +103,10 @@ contains
 
       type(block_type), pointer :: block_ptr
       type(electrostatic_block_state), pointer :: new_state, tail
+      character(len=StrKIND), pointer :: terrain_mode
+      logical :: terrain_detected, zgrid_mode
       real(kind=RKIND) :: source_x0, source_y0
+      real(kind=RKIND) :: mms_x, mms_y, z_top, z_bottom
 
       if (electrostatic_initialized) then
          call mpas_electrostatic_finalize(domain)
@@ -99,13 +116,30 @@ contains
       nullify(tail)
 
       call compute_domain_synthetic_source_center(domain, source_x0, source_y0)
+      call compute_domain_grid_extents(domain, mms_x, mms_y, z_top, z_bottom, terrain_detected)
+      call mpas_pool_get_config(domain % blocklist % configs, 'config_electrostatic_terrain_mode', terrain_mode)
+
+      zgrid_mode = .false.
+      if (terrain_detected) then
+         select case (trim(terrain_mode))
+         case ('zgrid')
+            zgrid_mode = .true.
+         case default
+            call mpas_log_write('Electrostatics requires a flat (z-level) mesh: layer ' // &
+                                'thickness varies horizontally, indicating a terrain-following ' // &
+                                'coordinate. Set config_electrostatic_terrain_mode = ''zgrid'' ' // &
+                                'to solve on a uniform altitude grid, or disable ' // &
+                                'config_electrostatic_enable.', messageType=MPAS_LOG_CRIT)
+         end select
+      end if
 
       block_ptr => domain % blocklist
       do while (associated(block_ptr))
          allocate(new_state)
          nullify(new_state % next)
 
-         call init_block_state(block_ptr, new_state, domain % sphere_radius, source_x0, source_y0)
+         call init_block_state(block_ptr, new_state, domain % sphere_radius, source_x0, source_y0, &
+                               mms_x, mms_y, z_top, z_bottom, zgrid_mode)
 
          if (.not. associated(block_states)) then
             block_states => new_state
@@ -182,6 +216,13 @@ contains
          if (allocated(state_ptr % rhs)) deallocate(state_ptr % rhs)
          if (allocated(state_ptr % x)) deallocate(state_ptr % x)
          if (allocated(state_ptr % zMid)) deallocate(state_ptr % zMid)
+         if (allocated(state_ptr % zGround)) deallocate(state_ptr % zGround)
+         if (allocated(state_ptr % zFaceP)) deallocate(state_ptr % zFaceP)
+         if (allocated(state_ptr % zMidPC)) deallocate(state_ptr % zMidPC)
+         if (allocated(state_ptr % airThickness)) deallocate(state_ptr % airThickness)
+         if (allocated(state_ptr % rhoP)) deallocate(state_ptr % rhoP)
+         if (allocated(state_ptr % kFirstActive)) deallocate(state_ptr % kFirstActive)
+         if (allocated(state_ptr % active)) deallocate(state_ptr % active)
          if (allocated(state_ptr % E_vertical)) deallocate(state_ptr % E_vertical)
          if (allocated(state_ptr % E_x)) deallocate(state_ptr % E_x)
          if (allocated(state_ptr % E_y)) deallocate(state_ptr % E_y)
@@ -262,18 +303,106 @@ contains
 
 !***********************************************************************
 !
+!  routine compute_domain_grid_extents
+!
+!> \brief Compute domain extents and globally detect terrain-following layers
+!
+!-----------------------------------------------------------------------
+   subroutine compute_domain_grid_extents(domain, x_extent, y_extent, z_top, z_bottom, terrain_detected)
+
+      type(domain_type), intent(inout) :: domain
+      real(kind=RKIND), intent(out) :: x_extent
+      real(kind=RKIND), intent(out) :: y_extent
+      real(kind=RKIND), intent(out) :: z_top
+      real(kind=RKIND), intent(out) :: z_bottom
+      logical, intent(out) :: terrain_detected
+
+      type(block_type), pointer :: block_ptr
+      type(mpas_pool_type), pointer :: mesh_pool
+      integer, pointer :: nCellsSolve_ptr, nVertLevels_ptr
+      integer :: nCellsSolve, nVertLevels, k, local_flag, global_flag
+      real(kind=RKIND), dimension(:), pointer :: xCell, yCell
+      real(kind=RKIND), dimension(:,:), pointer :: zgrid
+      real(kind=RKIND) :: lxmin, lxmax, lymin, lymax, lzmax, lzgmin
+      real(kind=RKIND) :: gxmin, gxmax, gymin, gymax
+      real(kind=RKIND) :: mean_dz, max_dev
+      real(kind=RKIND), parameter :: flat_rtol = 1.0e-3_RKIND
+
+      lxmin = huge(1.0_RKIND)
+      lxmax = -huge(1.0_RKIND)
+      lymin = huge(1.0_RKIND)
+      lymax = -huge(1.0_RKIND)
+      lzmax = -huge(1.0_RKIND)
+      lzgmin = huge(1.0_RKIND)
+      local_flag = 0
+
+      block_ptr => domain % blocklist
+      do while (associated(block_ptr))
+         call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
+         call mpas_pool_get_dimension(mesh_pool, 'nCellsSolve', nCellsSolve_ptr)
+         call mpas_pool_get_dimension(mesh_pool, 'nVertLevels', nVertLevels_ptr)
+         call mpas_pool_get_array(mesh_pool, 'xCell', xCell)
+         call mpas_pool_get_array(mesh_pool, 'yCell', yCell)
+         call mpas_pool_get_array(mesh_pool, 'zgrid', zgrid)
+
+         nCellsSolve = nCellsSolve_ptr
+         nVertLevels = nVertLevels_ptr
+         if (nCellsSolve > 0) then
+            lxmin = min(lxmin, minval(xCell(1:nCellsSolve)))
+            lxmax = max(lxmax, maxval(xCell(1:nCellsSolve)))
+            lymin = min(lymin, minval(yCell(1:nCellsSolve)))
+            lymax = max(lymax, maxval(yCell(1:nCellsSolve)))
+            lzmax = max(lzmax, maxval(zgrid(nVertLevels+1,1:nCellsSolve)))
+            lzgmin = min(lzgmin, minval(zgrid(1,1:nCellsSolve)))
+
+            do k = 1, nVertLevels
+               mean_dz = sum(zgrid(k+1,1:nCellsSolve) - zgrid(k,1:nCellsSolve)) / &
+                         real(nCellsSolve, kind=RKIND)
+               max_dev = maxval(abs((zgrid(k+1,1:nCellsSolve) - zgrid(k,1:nCellsSolve)) - mean_dz))
+               if (mean_dz > 0.0_RKIND .and. max_dev > flat_rtol * mean_dz) local_flag = 1
+            end do
+         end if
+
+         block_ptr => block_ptr % next
+      end do
+
+      call mpas_dmpar_min_real(domain % dminfo, lxmin, gxmin)
+      call mpas_dmpar_max_real(domain % dminfo, lxmax, gxmax)
+      call mpas_dmpar_min_real(domain % dminfo, lymin, gymin)
+      call mpas_dmpar_max_real(domain % dminfo, lymax, gymax)
+      call mpas_dmpar_max_real(domain % dminfo, lzmax, z_top)
+      call mpas_dmpar_min_real(domain % dminfo, lzgmin, z_bottom)
+      call mpas_dmpar_max_int(domain % dminfo, local_flag, global_flag)
+      terrain_detected = global_flag > 0
+
+      x_extent = gxmax - gxmin
+      y_extent = gymax - gymin
+      if (x_extent <= 0.0_RKIND) x_extent = 1.0_RKIND
+      if (y_extent <= 0.0_RKIND) y_extent = 1.0_RKIND
+      if (z_top <= z_bottom) z_top = z_bottom + 1.0_RKIND
+
+   end subroutine compute_domain_grid_extents
+
+!***********************************************************************
+!
 !  routine init_block_state
 !
 !> \brief Initialize one block's electrostatic operator and PCG workspace
 !
 !-----------------------------------------------------------------------
-   subroutine init_block_state(block_ptr, state_ptr, sphere_radius, source_x0, source_y0)
+   subroutine init_block_state(block_ptr, state_ptr, sphere_radius, source_x0, source_y0, &
+                               x_period_in, y_period_in, z_top_in, z_bottom_in, zgrid_mode)
 
       type(block_type), pointer, intent(inout) :: block_ptr
       type(electrostatic_block_state), pointer, intent(inout) :: state_ptr
       real(kind=RKIND), intent(in) :: sphere_radius
       real(kind=RKIND), intent(in) :: source_x0
       real(kind=RKIND), intent(in) :: source_y0
+      real(kind=RKIND), intent(in) :: x_period_in
+      real(kind=RKIND), intent(in) :: y_period_in
+      real(kind=RKIND), intent(in) :: z_top_in
+      real(kind=RKIND), intent(in) :: z_bottom_in
+      logical, intent(in) :: zgrid_mode
 
       type(mpas_pool_type), pointer :: mesh_pool, es_pool
       integer, pointer :: nCells_ptr, nEdges_ptr, nVertLevels_ptr, maxEdges_ptr
@@ -281,7 +410,7 @@ contains
       integer, pointer :: max_iter
       integer :: nCells, nEdges, nVertLevels, maxEdges, preconditioner
       integer, dimension(:), pointer :: nEdgesOnCell
-      integer, dimension(:,:), pointer :: cellsOnCell, edgesOnCell
+      integer, dimension(:,:), pointer :: cellsOnCell, edgesOnCell, cellsOnEdge
       real(kind=RKIND), dimension(:), pointer :: areaCell, dcEdge, dvEdge
       real(kind=RKIND), dimension(:), pointer :: xCell, yCell
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
@@ -289,8 +418,9 @@ contains
       real(kind=RKIND), dimension(:,:,:), pointer :: E_vector
       real(kind=RKIND), pointer :: tol
       real(kind=RKIND), pointer :: mesh_x_period, mesh_y_period
-      real(kind=RKIND), allocatable :: dz(:)
       real(kind=RKIND), allocatable :: areaMetric(:), dcMetric(:), dvMetric(:)
+      real(kind=RKIND), allocatable :: h_weight(:,:), v_up(:,:), v_lo(:,:)
+      real(kind=RKIND), allocatable :: diag_extra(:,:), op_volume(:,:)
       logical, pointer :: is_periodic, on_a_sphere
       character(len=StrKIND), pointer :: pc_name
 
@@ -314,6 +444,7 @@ contains
       call mpas_pool_get_array(mesh_pool, 'nEdgesOnCell', nEdgesOnCell)
       call mpas_pool_get_array(mesh_pool, 'cellsOnCell', cellsOnCell)
       call mpas_pool_get_array(mesh_pool, 'edgesOnCell', edgesOnCell)
+      call mpas_pool_get_array(mesh_pool, 'cellsOnEdge', cellsOnEdge)
       call mpas_pool_get_array(mesh_pool, 'xCell', xCell)
       call mpas_pool_get_array(mesh_pool, 'yCell', yCell)
       call mpas_pool_get_array(mesh_pool, 'zgrid', zgrid)
@@ -329,37 +460,65 @@ contains
       allocate(state_ptr % rhs(nVertLevels,nCells))
       allocate(state_ptr % x(nVertLevels,nCells))
       allocate(state_ptr % zMid(nVertLevels,nCells))
+      allocate(state_ptr % zGround(nCells))
+      allocate(state_ptr % zFaceP(nVertLevels+1))
+      allocate(state_ptr % zMidPC(nVertLevels,nCells))
+      allocate(state_ptr % airThickness(nVertLevels,nCells))
+      allocate(state_ptr % kFirstActive(nCells))
+      allocate(state_ptr % active(nVertLevels,nCells))
       allocate(state_ptr % E_vertical(nVertLevels,nCells))
       allocate(state_ptr % E_x(nVertLevels,nCells))
       allocate(state_ptr % E_y(nVertLevels,nCells))
       allocate(state_ptr % E_z(nVertLevels,nCells))
       allocate(state_ptr % E_zonal(nVertLevels,nCells))
       allocate(state_ptr % E_meridional(nVertLevels,nCells))
-      allocate(dz(nVertLevels))
       allocate(areaMetric(nCells))
       allocate(dcMetric(nEdges))
       allocate(dvMetric(nEdges))
+      allocate(h_weight(nVertLevels,nEdges))
+      allocate(v_up(nVertLevels,nCells), v_lo(nVertLevels,nCells))
+      allocate(diag_extra(nVertLevels,nCells), op_volume(nVertLevels,nCells))
 
-      call fill_z_geometry(nCells, nVertLevels, zgrid, state_ptr % zMid, dz)
+      state_ptr % zgrid_mode = zgrid_mode
+      call fill_z_mid(nCells, nVertLevels, zgrid, state_ptr % zMid)
+      state_ptr % zGround(1:nCells) = zgrid(1,1:nCells)
+      call electrostatic_build_poisson_grid(nCells, nVertLevels, state_ptr % zGround, &
+                                            z_bottom_in, z_top_in, state_ptr % zFaceP, &
+                                            state_ptr % zMidPC, state_ptr % active, &
+                                            state_ptr % kFirstActive, state_ptr % airThickness)
+      if (zgrid_mode) then
+         allocate(state_ptr % rhoP(nVertLevels,nCells))
+         state_ptr % rhoP = 0.0_RKIND
+      end if
+
       if (sphere_radius > 0.0_RKIND) state_ptr % sphere_radius = sphere_radius
       state_ptr % source_x0 = source_x0
       state_ptr % source_y0 = source_y0
+      state_ptr % x_period = x_period_in
+      state_ptr % y_period = y_period_in
+      state_ptr % z_top = z_top_in
       state_ptr % horizontal_length_scale = &
          electrostatic_horizontal_metric_scale(nEdges, dcEdge, state_ptr % sphere_radius, on_a_sphere)
       areaMetric = areaCell * state_ptr % horizontal_length_scale * state_ptr % horizontal_length_scale
       dcMetric = dcEdge * state_ptr % horizontal_length_scale
       dvMetric = dvEdge * state_ptr % horizontal_length_scale
-      call infer_mms_periods(nCells, nVertLevels, xCell, yCell, zgrid, &
-                             state_ptr % x_period, state_ptr % y_period, state_ptr % z_top)
       if (is_periodic) then
          if (mesh_x_period > 0.0_RKIND) state_ptr % x_period = mesh_x_period
          if (mesh_y_period > 0.0_RKIND) state_ptr % y_period = mesh_y_period
       end if
 
       preconditioner = preconditioner_from_name(pc_name)
-      call elliptic_operator_init(state_ptr % op, nCells, nEdges, nVertLevels, maxEdges, &
-                                  areaMetric, dcMetric, dvMetric, nEdgesOnCell, cellsOnCell, &
-                                  edgesOnCell, dz, epsilon0)
+      call electrostatic_build_poisson_fv_weights(nCells, nEdges, nVertLevels, cellsOnEdge, &
+                                                  areaMetric, dcMetric, dvMetric, epsilon0, &
+                                                  state_ptr % zFaceP, state_ptr % zGround, &
+                                                  state_ptr % z_top, state_ptr % zMidPC, &
+                                                  state_ptr % active, state_ptr % kFirstActive, &
+                                                  state_ptr % airThickness, h_weight, v_up, v_lo, &
+                                                  diag_extra, op_volume)
+      call elliptic_operator_init_from_weights(state_ptr % op, nCells, nEdges, nVertLevels, maxEdges, &
+                                               nEdgesOnCell, cellsOnCell, edgesOnCell, &
+                                               h_weight, v_up, v_lo, diag_extra, op_volume, &
+                                               state_ptr % active)
       call pcg_init(state_ptr % solver, nCells, nVertLevels, preconditioner, max(1, max_iter), tol)
 
       state_ptr % rhs = 0.0_RKIND
@@ -381,10 +540,10 @@ contains
       E_vector = 0.0_RKIND
       call set_solver_diagnostics(es_pool, 0, 0.0_RKIND, 0.0_RKIND)
 
-      deallocate(dz)
       deallocate(areaMetric)
       deallocate(dcMetric)
       deallocate(dvMetric)
+      deallocate(h_weight, v_up, v_lo, diag_extra, op_volume)
 
    end subroutine init_block_state
 
@@ -403,15 +562,18 @@ contains
       type(mpas_pool_type), pointer :: mesh_pool, es_pool, state_pool
       integer, pointer :: nCells_ptr, nVertLevels_ptr
       integer, pointer :: num_scalars_ptr, index_qc_ptr, index_qr_ptr, index_qi_ptr, index_qg_ptr
-      integer :: nCells, nVertLevels, stub_negative_index, stub_positive_index
+      integer :: nCells, nVertLevels, nDiagCells, stub_negative_index, stub_positive_index
       real(kind=RKIND), dimension(:), pointer :: latCell, lonCell, xCell, yCell
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, rho_charge
+      real(kind=RKIND), dimension(:,:), pointer :: poisson_zmid, poisson_air_thickness
       real(kind=RKIND), dimension(:,:), pointer :: w
       real(kind=RKIND), dimension(:,:,:), pointer :: scalars
       real(kind=RKIND), pointer :: phi_ground
       real(kind=RKIND), pointer :: source_charge, source_sigma, dipole_separation
+      real(kind=RKIND), pointer :: hill_height
       real(kind=RKIND), pointer :: stub_alpha, stub_beta
+      logical, allocatable :: activeAll(:,:)
       character(len=StrKIND), pointer :: source_name
 
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
@@ -437,20 +599,53 @@ contains
       call mpas_pool_get_array(state_pool, 'scalars', scalars, 1)
       call mpas_pool_get_array(es_pool, 'phi', phi)
       call mpas_pool_get_array(es_pool, 'rho_charge', rho_charge)
+      call mpas_pool_get_array(es_pool, 'poisson_zmid', poisson_zmid)
+      call mpas_pool_get_array(es_pool, 'poisson_air_thickness', poisson_air_thickness)
 
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_source', source_name)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_bc_ground', phi_ground)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_source_charge', source_charge)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_source_sigma', source_sigma)
       call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_dipole_separation', dipole_separation)
+      call mpas_pool_get_config(block_ptr % configs, 'config_electrostatic_hill_height', hill_height)
       call mpas_pool_get_config(block_ptr % configs, 'config_stub_alpha', stub_alpha)
       call mpas_pool_get_config(block_ptr % configs, 'config_stub_beta', stub_beta)
 
       call fill_z_mid(nCells, nVertLevels, zgrid, state_ptr % zMid)
 
+      if (state_ptr % zgrid_mode) then
+         select case (trim(source_name))
+         case ('mms_terrain', 'stub', 'external')
+            continue
+         case default
+            call mpas_log_write('Electrostatics: source "'//trim(source_name)// &
+               '" is not supported with config_electrostatic_terrain_mode=zgrid; ' // &
+               'use mms_terrain, stub, or external.', messageType=MPAS_LOG_CRIT)
+         end select
+      end if
+
       select case (trim(source_name))
       case ('external')
          continue
+      case ('mms_terrain')
+         if (.not. state_ptr % zgrid_mode) then
+            call mpas_log_write('Electrostatics: source mms_terrain requires a terrain ' // &
+               'mesh with config_electrostatic_terrain_mode = ''zgrid''.', &
+               messageType=MPAS_LOG_CRIT)
+         else
+            call electrostatic_fill_mms_terrain_source(nCells, nVertLevels, xCell, yCell, &
+                                                       state_ptr % zMidPC, state_ptr % active, &
+                                                       epsilon0, state_ptr % x_period, &
+                                                       state_ptr % y_period, state_ptr % z_top, &
+                                                       hill_height, state_ptr % rhoP)
+            allocate(activeAll(nVertLevels,nCells))
+            activeAll = .true.
+            call electrostatic_fill_mms_terrain_source(nCells, nVertLevels, xCell, yCell, &
+                                                       state_ptr % zMid, activeAll, epsilon0, &
+                                                       state_ptr % x_period, state_ptr % y_period, &
+                                                       state_ptr % z_top, hill_height, rho_charge)
+            deallocate(activeAll)
+         end if
       case ('mms_cart_horizontal')
          call electrostatic_fill_mms_cart_horizontal_source(nCells, nVertLevels, xCell, yCell, &
                                                             state_ptr % zMid, epsilon0, &
@@ -509,14 +704,37 @@ contains
                                                  state_ptr % z_top, rho_charge)
       end select
 
-      state_ptr % rhs = rho_charge * state_ptr % op % volume
+      if (state_ptr % zgrid_mode) then
+         select case (trim(source_name))
+         case ('stub', 'external')
+            call electrostatic_remap_rho_conservative(nCells, nVertLevels, zgrid, &
+                     state_ptr % zFaceP, state_ptr % zGround, state_ptr % kFirstActive, &
+                     state_ptr % active, state_ptr % airThickness, rho_charge, state_ptr % rhoP)
+         case default
+            continue
+         end select
+         state_ptr % rhs = state_ptr % rhoP * state_ptr % op % volume
+      else
+         state_ptr % rhs = rho_charge * state_ptr % op % volume
+      end if
 
       if (abs(phi_ground) > 0.0_RKIND) then
          call electrostatic_apply_ground_rhs(nCells, nVertLevels, phi_ground, &
-                                             state_ptr % op % v_weight_lower, state_ptr % rhs)
+                                             state_ptr % op % v_weight_lower, state_ptr % rhs, &
+                                             kFirstActive=state_ptr % kFirstActive)
       end if
 
-      state_ptr % x = phi
+      if (state_ptr % zgrid_mode) then
+         where (.not. state_ptr % active) state_ptr % x = 0.0_RKIND
+      else
+         state_ptr % x = phi
+      end if
+
+      nDiagCells = min(size(poisson_zmid, 2), size(state_ptr % zMidPC, 2))
+      poisson_zmid = 0.0_RKIND
+      poisson_air_thickness = 0.0_RKIND
+      poisson_zmid(:,1:nDiagCells) = state_ptr % zMidPC(:,1:nDiagCells)
+      poisson_air_thickness(:,1:nDiagCells) = state_ptr % airThickness(:,1:nDiagCells)
 
    end subroutine prepare_block_potential_rhs
 
@@ -867,15 +1085,15 @@ contains
 
       type(mpas_pool_type), pointer :: mesh_pool, es_pool
       integer, pointer :: nCells_ptr, nEdges_ptr, nVertLevels_ptr
-      integer :: iCell, k, nCells, nEdges, nVertLevels
-      integer, allocatable :: kFirstFlat(:)
+      integer :: iCell, k, nCells, nEdges, nPhiCells, nVertLevels
       integer, dimension(:,:), pointer :: cellsOnEdge
       real(kind=RKIND), dimension(:), pointer :: dcEdge
-      real(kind=RKIND), allocatable :: zGroundFlat(:)
+      real(kind=RKIND), allocatable :: phiP(:,:), work(:,:)
       real(kind=RKIND), dimension(:,:), pointer :: localVerticalUnitVectors
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND), dimension(:,:), pointer :: phi, E_normal
       real(kind=RKIND), dimension(:,:,:), pointer :: E_vector
+      logical, allocatable :: activeTarget(:,:)
       real(kind=RKIND), pointer :: phi_ground
 
       call mpas_pool_get_subpool(block_ptr % structs, 'mesh', mesh_pool)
@@ -901,16 +1119,35 @@ contains
                                  state_ptr % horizontal_length_scale, phi, E_normal)
 
       call mpas_reconstruct(mesh_pool, E_normal, state_ptr % E_x, state_ptr % E_y, state_ptr % E_z, &
-                            state_ptr % E_zonal, state_ptr % E_meridional, includeHalos=.true.)
+                            state_ptr % E_zonal, state_ptr % E_meridional, includeHalos=.false.)
 
       call fill_z_mid(nCells, nVertLevels, zgrid, state_ptr % zMid)
-      allocate(zGroundFlat(nCells), kFirstFlat(nCells))
-      zGroundFlat = 0.0_RKIND
-      kFirstFlat = 1
-      call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, state_ptr % zMid, &
-                                            phi_ground, state_ptr % z_top, zGroundFlat, &
-                                            kFirstFlat, state_ptr % E_vertical)
-      deallocate(zGroundFlat, kFirstFlat)
+      if (state_ptr % zgrid_mode) then
+         call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, state_ptr % zMidPC, &
+                                               phi_ground, state_ptr % z_top, state_ptr % zGround, &
+                                               state_ptr % kFirstActive, state_ptr % E_vertical)
+
+         allocate(activeTarget(nVertLevels,nCells))
+         allocate(work(nVertLevels,nCells))
+         activeTarget = .true.
+
+         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, activeTarget, state_ptr % E_x, work)
+         state_ptr % E_x = work
+         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, activeTarget, state_ptr % E_y, work)
+         state_ptr % E_y = work
+         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, activeTarget, state_ptr % E_z, work)
+         state_ptr % E_z = work
+         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, activeTarget, state_ptr % E_vertical, work)
+         state_ptr % E_vertical = work
+      else
+         call electrostatic_compute_vertical_E(nCells, nVertLevels, phi, state_ptr % zMid, &
+                                               phi_ground, state_ptr % z_top, state_ptr % zGround, &
+                                               state_ptr % kFirstActive, state_ptr % E_vertical)
+      end if
 
       do iCell = 1, nCells
          do k = 1, nVertLevels
@@ -922,6 +1159,17 @@ contains
                                   state_ptr % E_vertical(k,iCell) * localVerticalUnitVectors(3,iCell)
          end do
       end do
+
+      if (state_ptr % zgrid_mode) then
+         allocate(phiP(nVertLevels,nCells))
+         phiP = phi
+         call electrostatic_interp_mpas_to_poisson(nCells, nVertLevels, state_ptr % zMidPC, &
+                                                   state_ptr % zMid, activeTarget, phiP, work)
+         nPhiCells = min(size(phi, 2), size(work, 2))
+         phi = 0.0_RKIND
+         phi(:,1:nPhiCells) = work(:,1:nPhiCells)
+         deallocate(phiP, work, activeTarget)
+      end if
 
    end subroutine postprocess_block_E
 
@@ -975,32 +1223,13 @@ contains
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: zMid
       real(kind=RKIND), dimension(nVertLevels), intent(out) :: dz
 
-      integer :: iCell, k
-      real(kind=RKIND) :: mean_dz, max_dev, thickness
-      real(kind=RKIND), parameter :: flat_rtol = 1.0e-3_RKIND
+      integer :: k
+      real(kind=RKIND) :: mean_dz
 
       call fill_z_mid(nCells, nVertLevels, zgrid, zMid)
 
       do k = 1, nVertLevels
          mean_dz = sum(zgrid(k+1,1:nCells) - zgrid(k,1:nCells)) / real(nCells, kind=RKIND)
-
-         ! Phase-1 electrostatics assumes flat (z-level) layers and uses a
-         ! single horizontally-averaged thickness per level. Refuse to run on
-         ! terrain-following meshes, where per-cell thickness varies and the
-         ! averaged operator would be silently inconsistent.
-         max_dev = 0.0_RKIND
-         do iCell = 1, nCells
-            thickness = zgrid(k+1,iCell) - zgrid(k,iCell)
-            max_dev = max(max_dev, abs(thickness - mean_dz))
-         end do
-         if (mean_dz > 0.0_RKIND .and. max_dev > flat_rtol * mean_dz) then
-            call mpas_log_write('Electrostatics requires a flat (z-level) mesh: layer ' // &
-                                'thickness varies horizontally, indicating a terrain-following ' // &
-                                'coordinate that is not supported in Phase 1. Disable ' // &
-                                'config_electrostatic_enable or use a flat mesh.', &
-                                messageType=MPAS_LOG_CRIT)
-         end if
-
          dz(k) = mean_dz
          if (dz(k) <= 0.0_RKIND) then
             dz(k) = 1.0_RKIND
