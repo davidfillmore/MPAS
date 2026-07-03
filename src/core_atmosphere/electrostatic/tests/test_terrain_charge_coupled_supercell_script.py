@@ -35,7 +35,7 @@ class TerrainChargeCoupledSupercellScriptTests(unittest.TestCase):
         self.assertEqual(
             args.run_dir,
             pathlib.Path(
-                "~/Data/MPAS/poisson_charge_coupled_supercell_terrain_h1000/run"
+                "~/Data/MPAS/poisson_charge_coupled_supercell_terrain_h1000_v2/run"
             ),
         )
         self.assertEqual(args.hill_height, 1000.0)

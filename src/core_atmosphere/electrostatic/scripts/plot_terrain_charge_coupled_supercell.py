@@ -210,7 +210,7 @@ def parse_args(argv=None):
         "--output-nc",
         type=pathlib.Path,
         default=pathlib.Path(
-            "~/Data/MPAS/poisson_charge_coupled_supercell_terrain_h1000/run/output.nc"
+            "~/Data/MPAS/poisson_charge_coupled_supercell_terrain_h1000_v2/run/output.nc"
         ),
         help="Terrain charge-coupled supercell output.nc file.",
     )

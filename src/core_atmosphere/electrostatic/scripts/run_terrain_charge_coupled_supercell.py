@@ -23,7 +23,7 @@ from run_tripole_supercell import seed_run_dir_from_template  # noqa: E402
 
 
 DEFAULT_RUN_DIR = pathlib.Path(
-    "~/Data/MPAS/poisson_charge_coupled_supercell_terrain_h1000/run"
+    "~/Data/MPAS/poisson_charge_coupled_supercell_terrain_h1000_v2/run"
 )
 DEFAULT_TEMPLATE_RUN_DIR = pathlib.Path("~/Data/MPAS/supercell")
 DEFAULT_HILL_HEIGHT = 1000.0
