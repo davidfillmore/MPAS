@@ -307,9 +307,9 @@ def plot_point_charge(output_nc, figure_path, *, charge, sigma, min_radius, max_
     ax.set_ylabel(r"$|E|$ (kV m$^{-1}$)")
     ax.grid(True, which="both", linestyle=":", linewidth=0.4)
     ax.legend(frameon=False, fontsize=8)
-    ax.set_title("Tier B.1 regularized point charge")
+    ax.set_title("Regularized point charge")
     fig.tight_layout()
-    fig.savefig(figure_path)
+    fig.savefig(figure_path, dpi=300)
     plt.close(fig)
 
     return {
@@ -507,7 +507,7 @@ def plot_tripole(output_nc, figure_path):
         ax.set_xlim(float(np.nanmin(y_km)), float(np.nanmax(y_km)))
         ax.set_ylim(float(np.nanmin(z_km)), float(np.nanmax(z_km)))
 
-    fig.savefig(figure_path, bbox_inches="tight")
+    fig.savefig(figure_path, bbox_inches="tight", dpi=300)
     plt.close(fig)
 
     return {

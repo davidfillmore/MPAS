@@ -204,7 +204,7 @@ def plot_terrain_charge_coupled_output(
     plot_path.parent.mkdir(parents=True, exist_ok=True)
     # Vector PDF for publication figures (matplotlib infers the format from the
     # suffix); dpi only affects any rasterized inset, harmless for pure vector.
-    fig.savefig(plot_path, bbox_inches="tight", dpi=220)
+    fig.savefig(plot_path, bbox_inches="tight", dpi=300)
     plt.close(fig)
     return plot_path
 
