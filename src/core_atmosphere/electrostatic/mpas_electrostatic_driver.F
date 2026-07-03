@@ -44,7 +44,6 @@ module mpas_electrostatic_driver
    use mpas_electrostatic_vertical_remap, only : electrostatic_build_poisson_grid, &
                                                  electrostatic_build_poisson_fv_weights, &
                                                  electrostatic_remap_rho_conservative, &
-                                                 electrostatic_interp_mpas_to_poisson, &
                                                  electrostatic_interp_poisson_to_mpas
 
    implicit none
@@ -1255,36 +1254,6 @@ contains
 
 !***********************************************************************
 !
-!  routine fill_z_geometry
-!
-!> \brief Compute cell-centered z and representative layer thicknesses
-!
-!-----------------------------------------------------------------------
-   subroutine fill_z_geometry(nCells, nVertLevels, zgrid, zMid, dz)
-
-      integer, intent(in) :: nCells
-      integer, intent(in) :: nVertLevels
-      real(kind=RKIND), dimension(nVertLevels+1,nCells), intent(in) :: zgrid
-      real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: zMid
-      real(kind=RKIND), dimension(nVertLevels), intent(out) :: dz
-
-      integer :: k
-      real(kind=RKIND) :: mean_dz
-
-      call fill_z_mid(nCells, nVertLevels, zgrid, zMid)
-
-      do k = 1, nVertLevels
-         mean_dz = sum(zgrid(k+1,1:nCells) - zgrid(k,1:nCells)) / real(nCells, kind=RKIND)
-         dz(k) = mean_dz
-         if (dz(k) <= 0.0_RKIND) then
-            dz(k) = 1.0_RKIND
-         end if
-      end do
-
-   end subroutine fill_z_geometry
-
-!***********************************************************************
-!
 !  routine fill_z_mid
 !
 !> \brief Compute cell-centered z from interface heights
@@ -1306,34 +1275,6 @@ contains
       end do
 
    end subroutine fill_z_mid
-
-!***********************************************************************
-!
-!  routine infer_mms_periods
-!
-!> \brief Infer Cartesian MMS length scales from available mesh geometry
-!
-!-----------------------------------------------------------------------
-   subroutine infer_mms_periods(nCells, nVertLevels, xCell, yCell, zgrid, x_period, y_period, z_top)
-
-      integer, intent(in) :: nCells
-      integer, intent(in) :: nVertLevels
-      real(kind=RKIND), dimension(nCells), intent(in) :: xCell
-      real(kind=RKIND), dimension(nCells), intent(in) :: yCell
-      real(kind=RKIND), dimension(nVertLevels+1,nCells), intent(in) :: zgrid
-      real(kind=RKIND), intent(out) :: x_period
-      real(kind=RKIND), intent(out) :: y_period
-      real(kind=RKIND), intent(out) :: z_top
-
-      x_period = maxval(xCell(1:nCells)) - minval(xCell(1:nCells))
-      y_period = maxval(yCell(1:nCells)) - minval(yCell(1:nCells))
-      z_top = maxval(zgrid(1:nVertLevels+1,1:nCells))
-
-      if (x_period <= 0.0_RKIND) x_period = 1.0_RKIND
-      if (y_period <= 0.0_RKIND) y_period = 1.0_RKIND
-      if (z_top <= 0.0_RKIND) z_top = 1.0_RKIND
-
-   end subroutine infer_mms_periods
 
 !***********************************************************************
 !
