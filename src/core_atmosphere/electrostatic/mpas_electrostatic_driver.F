@@ -18,7 +18,8 @@ module mpas_electrostatic_driver
    use mpas_kind_types, only : RKIND, StrKIND
    use mpas_pool_routines
    use mpas_log, only : mpas_log_write
-   use mpas_dmpar, only : mpas_dmpar_sum_real, mpas_dmpar_min_real, mpas_dmpar_max_real, &
+   use mpas_dmpar, only : mpas_dmpar_sum_real, mpas_dmpar_sum_real_array, &
+                          mpas_dmpar_min_real, mpas_dmpar_max_real, &
                           mpas_dmpar_max_int
    use mpas_atm_halos, only : exchange_halo_group
    use mpas_vector_reconstruction, only : mpas_reconstruct
@@ -108,6 +109,7 @@ contains
       logical :: terrain_detected, zgrid_mode
       real(kind=RKIND) :: source_x0, source_y0
       real(kind=RKIND) :: mms_x, mms_y, z_top, z_bottom
+      real(kind=RKIND), allocatable :: zFaceProfile(:)
 
       if (electrostatic_initialized) then
          call mpas_electrostatic_finalize(domain)
@@ -117,7 +119,8 @@ contains
       nullify(tail)
 
       call compute_domain_synthetic_source_center(domain, source_x0, source_y0)
-      call compute_domain_grid_extents(domain, mms_x, mms_y, z_top, z_bottom, terrain_detected)
+      call compute_domain_grid_extents(domain, mms_x, mms_y, z_top, z_bottom, &
+                                       terrain_detected, zFaceProfile)
       call mpas_pool_get_config(domain % blocklist % configs, 'config_electrostatic_terrain_mode', terrain_mode)
 
       zgrid_mode = .false.
@@ -140,7 +143,7 @@ contains
          nullify(new_state % next)
 
          call init_block_state(block_ptr, new_state, domain % sphere_radius, source_x0, source_y0, &
-                               mms_x, mms_y, z_top, z_bottom, zgrid_mode)
+                               mms_x, mms_y, z_top, z_bottom, zFaceProfile, zgrid_mode)
 
          if (.not. associated(block_states)) then
             block_states => new_state
@@ -309,7 +312,8 @@ contains
 !> \brief Compute domain extents and globally detect terrain-following layers
 !
 !-----------------------------------------------------------------------
-   subroutine compute_domain_grid_extents(domain, x_extent, y_extent, z_top, z_bottom, terrain_detected)
+   subroutine compute_domain_grid_extents(domain, x_extent, y_extent, z_top, z_bottom, &
+                                          terrain_detected, zFaceProfile)
 
       type(domain_type), intent(inout) :: domain
       real(kind=RKIND), intent(out) :: x_extent
@@ -317,16 +321,18 @@ contains
       real(kind=RKIND), intent(out) :: z_top
       real(kind=RKIND), intent(out) :: z_bottom
       logical, intent(out) :: terrain_detected
+      real(kind=RKIND), dimension(:), allocatable, intent(out) :: zFaceProfile
 
       type(block_type), pointer :: block_ptr
       type(mpas_pool_type), pointer :: mesh_pool
       integer, pointer :: nCellsSolve_ptr, nVertLevels_ptr
-      integer :: nCellsSolve, nVertLevels, k, local_flag, global_flag
+      integer :: nCellsSolve, nVertLevels, k, local_flag, global_flag, nProfile
       real(kind=RKIND), dimension(:), pointer :: xCell, yCell
       real(kind=RKIND), dimension(:,:), pointer :: zgrid
       real(kind=RKIND) :: lxmin, lxmax, lymin, lymax, lzmax, lzgmin
       real(kind=RKIND) :: gxmin, gxmax, gymin, gymax
       real(kind=RKIND) :: mean_dz, max_dev
+      real(kind=RKIND), allocatable :: profile_local(:), profile_global(:)
       real(kind=RKIND), parameter :: flat_rtol = 1.0e-3_RKIND
 
       lxmin = huge(1.0_RKIND)
@@ -348,6 +354,12 @@ contains
 
          nCellsSolve = nCellsSolve_ptr
          nVertLevels = nVertLevels_ptr
+
+         if (.not. allocated(profile_local)) then
+            allocate(profile_local(nVertLevels+2))   ! K+1 face sums + owned-cell count
+            profile_local = 0.0_RKIND
+         end if
+
          if (nCellsSolve > 0) then
             lxmin = min(lxmin, minval(xCell(1:nCellsSolve)))
             lxmax = max(lxmax, maxval(xCell(1:nCellsSolve)))
@@ -362,6 +374,12 @@ contains
                max_dev = maxval(abs((zgrid(k+1,1:nCellsSolve) - zgrid(k,1:nCellsSolve)) - mean_dz))
                if (mean_dz > 0.0_RKIND .and. max_dev > flat_rtol * mean_dz) local_flag = 1
             end do
+
+            do k = 1, nVertLevels + 1
+               profile_local(k) = profile_local(k) + sum(zgrid(k,1:nCellsSolve))
+            end do
+            profile_local(nVertLevels+2) = profile_local(nVertLevels+2) + &
+                                           real(nCellsSolve, kind=RKIND)
          end if
 
          block_ptr => block_ptr % next
@@ -382,6 +400,26 @@ contains
       if (y_extent <= 0.0_RKIND) y_extent = 1.0_RKIND
       if (z_top <= z_bottom) z_top = z_bottom + 1.0_RKIND
 
+      ! Global per-level mean interface profile (flat meshes adopt these faces
+      ! natively). A single array allreduce keeps every rank bit-identical --
+      ! unlike the retired per-rank layer-thickness means, which could disagree
+      ! across ranks at roundoff level. Assumes >= 1 block per rank (standard
+      ! MPAS decomposition); nVertLevels is a registry dimension, identical
+      ! on all ranks.
+      nProfile = size(profile_local)
+      allocate(profile_global(nProfile))
+      call mpas_dmpar_sum_real_array(domain % dminfo, nProfile, profile_local, profile_global)
+      allocate(zFaceProfile(nProfile-1))
+      if (profile_global(nProfile) > 0.0_RKIND) then
+         zFaceProfile(:) = profile_global(1:nProfile-1) / profile_global(nProfile)
+      else
+         do k = 1, nProfile - 1
+            zFaceProfile(k) = z_bottom + real(k-1, kind=RKIND) * (z_top - z_bottom) / &
+                              real(nProfile-2, kind=RKIND)
+         end do
+      end if
+      deallocate(profile_local, profile_global)
+
    end subroutine compute_domain_grid_extents
 
 !***********************************************************************
@@ -392,7 +430,7 @@ contains
 !
 !-----------------------------------------------------------------------
    subroutine init_block_state(block_ptr, state_ptr, sphere_radius, source_x0, source_y0, &
-                               x_period_in, y_period_in, z_top_in, z_bottom_in, zgrid_mode)
+                               x_period_in, y_period_in, z_top_in, z_bottom_in, zFaceProfile, zgrid_mode)
 
       type(block_type), pointer, intent(inout) :: block_ptr
       type(electrostatic_block_state), pointer, intent(inout) :: state_ptr
@@ -403,13 +441,15 @@ contains
       real(kind=RKIND), intent(in) :: y_period_in
       real(kind=RKIND), intent(in) :: z_top_in
       real(kind=RKIND), intent(in) :: z_bottom_in
+      real(kind=RKIND), dimension(:), intent(in) :: zFaceProfile
       logical, intent(in) :: zgrid_mode
 
       type(mpas_pool_type), pointer :: mesh_pool, es_pool
       integer, pointer :: nCells_ptr, nEdges_ptr, nVertLevels_ptr, maxEdges_ptr
       integer, pointer :: nCellsSolve_ptr
       integer, pointer :: max_iter
-      integer :: nCells, nEdges, nVertLevels, maxEdges, preconditioner
+      integer :: nCells, nEdges, nVertLevels, maxEdges, preconditioner, k
+      real(kind=RKIND) :: dzP
       integer, dimension(:), pointer :: nEdgesOnCell
       integer, dimension(:,:), pointer :: cellsOnCell, edgesOnCell, cellsOnEdge
       real(kind=RKIND), dimension(:), pointer :: areaCell, dcEdge, dvEdge
@@ -483,10 +523,35 @@ contains
       state_ptr % zgrid_mode = zgrid_mode
       call fill_z_mid(nCells, nVertLevels, zgrid, state_ptr % zMid)
       state_ptr % zGround(1:nCells) = zgrid(1,1:nCells)
+
+      if (zgrid_mode) then
+         ! Terrain: uniform Poisson faces spanning [z_bottom, z_top] (the
+         ! Phase-4 z-grid design; sources and outputs are remapped).
+         dzP = (z_top_in - z_bottom_in) / real(nVertLevels, kind=RKIND)
+         do k = 1, nVertLevels + 1
+            state_ptr % zFaceP(k) = z_bottom_in + real(k-1, kind=RKIND) * dzP
+         end do
+      else
+         ! Flat: adopt the native (horizontally uniform) MPAS interface
+         ! profile so the operator, sources, and outputs share one grid.
+         ! With zGround(i) = zgrid(1,i) = zFaceP(1) the builders give
+         !   kFirstActive = 1, active = .true., airThickness(k) = dz(k),
+         !   zMidPC(k) = 0.5*(zFace(k)+zFace(k+1)) = zMid(k),
+         ! and the FV weights reduce to the legacy flat operator exactly
+         ! (mpas_elliptic_operator.F flat wrapper):
+         !   v_up(k) = eps*A/(zMidPC(k+1)-zMidPC(k)) = eps*A/(0.5*(dz(k)+dz(k+1)))
+         !   v_lo(1) = eps*A/(zMidPC(1)-zGround)     = eps*A/(dz(1)/2)
+         !   h(k,e)  = eps*(l_e/d_e)*dz(k),  volume(k) = A*dz(k),  no walls.
+         ! Sources evaluated at zMid, rhs = rho*volume, and phi/E output at
+         ! zMid are then mutually consistent on vertically stretched flat
+         ! meshes -- no remap needed, and zMidPC == zMid by construction.
+         state_ptr % zFaceP(1:nVertLevels+1) = zFaceProfile(1:nVertLevels+1)
+      end if
+
       call electrostatic_build_poisson_grid(nCells, nVertLevels, state_ptr % zGround, &
-                                            z_bottom_in, z_top_in, state_ptr % zFaceP, &
-                                            state_ptr % zMidPC, state_ptr % active, &
-                                            state_ptr % kFirstActive, state_ptr % airThickness)
+                                            state_ptr % zFaceP, state_ptr % zMidPC, &
+                                            state_ptr % active, state_ptr % kFirstActive, &
+                                            state_ptr % airThickness)
       if (zgrid_mode) then
          allocate(state_ptr % rhoP(nVertLevels,nCells))
          state_ptr % rhoP = 0.0_RKIND

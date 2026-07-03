@@ -15,6 +15,7 @@ program test_vertical_remap
    call test_poisson_to_mpas_ignores_inactive_source_levels()
    call test_w_interfaces_interpolate_to_poisson_midpoints()
    call test_build_poisson_grid_flat_matches_current_operator()
+   call test_build_poisson_grid_stretched_flat_native_faces()
    call test_build_poisson_grid_terrain_clipping_and_sliver_merge()
    call test_build_poisson_fv_weights_shaved_and_grounded()
    call test_conservative_remap_preserves_column_charge()
@@ -107,7 +108,8 @@ contains
       integer :: kFirst(nCells)
 
       zGround = 0.0_RKIND
-      call electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, 0.0_RKIND, 8.0_RKIND, &
+      zFace = [0.0_RKIND, 2.0_RKIND, 4.0_RKIND, 6.0_RKIND, 8.0_RKIND]
+      call electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, &
                                             zFace, poissonZmid, active, kFirst, airThickness)
       if (abs(zFace(1)) > 0.0_RKIND .or. abs(zFace(nVertLevels+1) - 8.0_RKIND) > 1.0e-12_RKIND) &
          stop "FAIL: face range"
@@ -117,6 +119,56 @@ contains
       if (maxval(abs(poissonZmid(:,1) - [1.0_RKIND, 3.0_RKIND, 5.0_RKIND, 7.0_RKIND])) > &
           1.0e-12_RKIND) stop "FAIL: flat midpoints must be uniform band midpoints"
    end subroutine test_build_poisson_grid_flat_matches_current_operator
+
+   subroutine test_build_poisson_grid_stretched_flat_native_faces()
+      integer, parameter :: nCells = 2, nEdges = 1, nVertLevels = 4
+      integer :: cellsOnEdge(2,nEdges), kFirst(nCells), k
+      real(kind=RKIND) :: areaCell(nCells), dcEdge(nEdges), dvEdge(nEdges)
+      real(kind=RKIND) :: zGround(nCells), zFace(nVertLevels+1), dz(nVertLevels)
+      real(kind=RKIND) :: poissonZmid(nVertLevels,nCells), airThickness(nVertLevels,nCells)
+      real(kind=RKIND) :: h_weight(nVertLevels,nEdges)
+      real(kind=RKIND) :: v_up(nVertLevels,nCells), v_lo(nVertLevels,nCells)
+      real(kind=RKIND) :: diag_extra(nVertLevels,nCells), volume(nVertLevels,nCells)
+      logical :: active(nVertLevels,nCells)
+
+      ! stretched flat mesh: native faces 0,1,3,6,10 (dz = 1,2,3,4);
+      ! eps = l = d = A = 1; both cells grounded at zFace(1)
+      zFace = [0.0_RKIND, 1.0_RKIND, 3.0_RKIND, 6.0_RKIND, 10.0_RKIND]
+      dz = zFace(2:nVertLevels+1) - zFace(1:nVertLevels)
+      zGround = 0.0_RKIND
+      cellsOnEdge(:,1) = [1, 2]
+      areaCell = 1.0_RKIND
+      dcEdge = 1.0_RKIND
+      dvEdge = 1.0_RKIND
+
+      call electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, zFace, &
+                                            poissonZmid, active, kFirst, airThickness)
+
+      if (any(kFirst /= 1) .or. .not. all(active)) stop "FAIL: stretched flat column fully active"
+      if (maxval(abs(airThickness(:,1) - dz)) > 1.0e-12_RKIND) stop "FAIL: native band thickness"
+      if (maxval(abs(poissonZmid(:,1) - [0.5_RKIND, 2.0_RKIND, 4.5_RKIND, 8.0_RKIND])) > &
+          1.0e-12_RKIND) stop "FAIL: zMidPC must equal native zMid on flat columns"
+
+      call electrostatic_build_poisson_fv_weights(nCells, nEdges, nVertLevels, cellsOnEdge, &
+                                                  areaCell, dcEdge, dvEdge, 1.0_RKIND, &
+                                                  zFace, zGround, 10.0_RKIND, poissonZmid, &
+                                                  active, kFirst, airThickness, &
+                                                  h_weight, v_up, v_lo, diag_extra, volume)
+
+      ! legacy flat operator formulas (mpas_elliptic_operator.F:97-118):
+      !   v_up(k) = eps*A/(0.5*(dz(k)+dz(k+1))), v_lo(1) = eps*A/(dz(1)/2),
+      !   volume(k) = A*dz(k), h(k,e) = eps*(l/d)*dz(k), no walls
+      do k = 1, nVertLevels - 1
+         if (abs(v_up(k,1) - 1.0_RKIND/(0.5_RKIND*(dz(k)+dz(k+1)))) > 1.0e-12_RKIND) &
+            stop "FAIL: stretched interior vertical weight"
+         if (abs(v_lo(k+1,1) - v_up(k,1)) > 0.0_RKIND) stop "FAIL: vertical weight pair"
+      end do
+      if (abs(v_lo(1,1) - 1.0_RKIND/(0.5_RKIND*dz(1))) > 1.0e-12_RKIND) &
+         stop "FAIL: stretched ground weight"
+      if (maxval(abs(volume(:,1) - dz)) > 1.0e-12_RKIND) stop "FAIL: stretched volume"
+      if (maxval(abs(h_weight(:,1) - dz)) > 1.0e-12_RKIND) stop "FAIL: stretched lateral weight"
+      if (any(abs(diag_extra) > 0.0_RKIND)) stop "FAIL: flat mesh must have no walls"
+   end subroutine test_build_poisson_grid_stretched_flat_native_faces
 
    subroutine test_build_poisson_grid_terrain_clipping_and_sliver_merge()
       integer, parameter :: nCells = 2, nVertLevels = 4
@@ -129,7 +181,8 @@ contains
       ! cell 1: zg=2.5 -> band 2 air = 1.5, kFirst=2, centroid 3.25.
       ! cell 2: zg=3.95 -> sliver band 2 merges up, kFirst=3, centroid 4.975.
       zGround = [2.5_RKIND, 3.95_RKIND]
-      call electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, 0.0_RKIND, 8.0_RKIND, &
+      zFace = [0.0_RKIND, 2.0_RKIND, 4.0_RKIND, 6.0_RKIND, 8.0_RKIND]
+      call electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, &
                                             zFace, poissonZmid, active, kFirst, airThickness)
       if (kFirst(1) /= 2 .or. kFirst(2) /= 3) stop "FAIL: kFirstActive"
       if (active(1,1) .or. active(2,2)) stop "FAIL: below-terrain levels must be inactive"
@@ -160,7 +213,8 @@ contains
       dcEdge = 1.0_RKIND
       dvEdge = 1.0_RKIND
       zGround = [0.0_RKIND, 1.2_RKIND]
-      call electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, 0.0_RKIND, 3.0_RKIND, &
+      zFace = [0.0_RKIND, 1.0_RKIND, 2.0_RKIND, 3.0_RKIND]
+      call electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, &
                                             zFace, poissonZmid, active, kFirst, airThickness)
       call electrostatic_build_poisson_fv_weights(nCells, nEdges, nVertLevels, cellsOnEdge, &
                                                   areaCell, dcEdge, dvEdge, 1.0_RKIND, &

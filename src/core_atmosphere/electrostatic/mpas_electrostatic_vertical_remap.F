@@ -33,31 +33,24 @@ contains
 !
 !  routine electrostatic_build_poisson_grid
 !
-!> \brief Build the uniform Poisson z grid and per-column active air bands
+!> \brief Clip caller-supplied Poisson faces into per-column active air bands
 !
 !-----------------------------------------------------------------------
-   subroutine electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, z_bottom, z_top, &
-                                               zFace, poissonZmid, active, kFirstActive, airThickness)
+   subroutine electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, zFace, &
+                                               poissonZmid, active, kFirstActive, airThickness)
 
       integer, intent(in) :: nCells
       integer, intent(in) :: nVertLevels
       real(kind=RKIND), dimension(nCells), intent(in) :: zGround
-      real(kind=RKIND), intent(in) :: z_bottom
-      real(kind=RKIND), intent(in) :: z_top
-      real(kind=RKIND), dimension(nVertLevels+1), intent(out) :: zFace
+      real(kind=RKIND), dimension(nVertLevels+1), intent(in) :: zFace
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: poissonZmid
       logical, dimension(nVertLevels,nCells), intent(out) :: active
       integer, dimension(nCells), intent(out) :: kFirstActive
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: airThickness
 
       integer :: iCell, k, kf
-      real(kind=RKIND) :: dzP, t
+      real(kind=RKIND) :: t
       real(kind=RKIND), parameter :: sliver_frac = 0.1_RKIND
-
-      dzP = (z_top - z_bottom) / real(nVertLevels, kind=RKIND)
-      do k = 1, nVertLevels + 1
-         zFace(k) = z_bottom + real(k-1, kind=RKIND) * dzP
-      end do
 
       do iCell = 1, nCells
          kf = nVertLevels + 1
@@ -70,7 +63,10 @@ contains
          end do
 
          if (kf <= nVertLevels) then
-            if (zFace(kf+1) - zGround(iCell) < sliver_frac * dzP .and. kf < nVertLevels) kf = kf + 1
+            ! sliver threshold against the local band thickness; identical to
+            ! the former sliver_frac*dzP on the uniform faces terrain mode passes
+            if (zFace(kf+1) - zGround(iCell) < sliver_frac * (zFace(kf+1) - zFace(kf)) .and. &
+                kf < nVertLevels) kf = kf + 1
          end if
          kFirstActive(iCell) = kf
 
