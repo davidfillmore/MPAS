@@ -25,8 +25,8 @@ test_pcg_solver: test_pcg_solver.F90 $(LIBS)
 test_mms_source: test_mms_source.F90
 	$(FC) $(FFLAGS) $(INCLUDES) -o $@ test_mms_source.F90 $(MMS_OBJS) $(LIBS)
 
-test_e_reconstruction: test_e_reconstruction.F90 $(ELECTROSTATIC_OBJS) $(LIBS)
-	$(FC) $(FFLAGS) $(INCLUDES) -o $@ test_e_reconstruction.F90 $(ELECTROSTATIC_OBJS) $(LIBS)
+test_e_reconstruction: test_e_reconstruction.F90 $(ELECTROSTATIC_OBJS) $(REMAP_OBJS) $(LIBS)
+	$(FC) $(FFLAGS) $(INCLUDES) -o $@ test_e_reconstruction.F90 $(ELECTROSTATIC_OBJS) $(REMAP_OBJS) $(LIBS)
 
 test_vertical_remap: test_vertical_remap.F90 $(REMAP_OBJS) $(LIBS)
 	$(FC) $(FFLAGS) $(INCLUDES) -o $@ test_vertical_remap.F90 $(REMAP_OBJS) $(LIBS)

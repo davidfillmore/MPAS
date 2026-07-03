@@ -33,7 +33,8 @@ contains
 !> \brief Add ground Dirichlet potential contributions to the RHS
 !
 !-----------------------------------------------------------------------
-   subroutine electrostatic_apply_ground_rhs(nCells, nVertLevels, phi_ground, v_weight_lower, rhs, kFirstActive)
+   subroutine electrostatic_apply_ground_rhs(nCells, nVertLevels, phi_ground, v_weight_lower, rhs, &
+                                             kFirstActive, wall_weight)
 
       integer, intent(in) :: nCells
       integer, intent(in) :: nVertLevels
@@ -41,13 +42,27 @@ contains
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: v_weight_lower
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(inout) :: rhs
       integer, dimension(nCells), intent(in), optional :: kFirstActive
+      real(kind=RKIND), dimension(nVertLevels,nCells), intent(in), optional :: wall_weight
 
-      integer :: iCell, kf
+      integer :: iCell, k, kf
 
       do iCell = 1, nCells
          kf = 1
          if (present(kFirstActive)) kf = kFirstActive(iCell)
+         if (kf > nVertLevels) cycle   ! fully-buried column sentinel (kf = nVertLevels+1)
+
          rhs(kf,iCell) = rhs(kf,iCell) + v_weight_lower(kf,iCell) * phi_ground
+
+         if (present(wall_weight)) then
+            ! Grounded lateral walls: the wall Dirichlet sink on the diagonal
+            ! (diag_extra) must be paired with the same datum on the RHS, or
+            ! the walls are pinned to 0 while the bottom is pinned to
+            ! phi_ground. Builder contract: wall_weight(k,i) == 0 on inactive
+            ! levels, so no separate active mask is needed here.
+            do k = 1, nVertLevels
+               rhs(k,iCell) = rhs(k,iCell) + wall_weight(k,iCell) * phi_ground
+            end do
+         end if
       end do
 
    end subroutine electrostatic_apply_ground_rhs

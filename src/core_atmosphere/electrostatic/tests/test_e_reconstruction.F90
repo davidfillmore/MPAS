@@ -4,11 +4,15 @@ program test_e_reconstruction
    use mpas_electrostatic_bcs, only : electrostatic_apply_ground_rhs, &
                                       electrostatic_compute_vertical_E, &
                                       electrostatic_horizontal_metric_scale
+   use mpas_elliptic_operator, only : mpas_elliptic_operator_type, elliptic_operator_init_from_weights
+   use mpas_electrostatic_vertical_remap, only : electrostatic_build_poisson_grid, &
+                                                 electrostatic_build_poisson_fv_weights
 
    implicit none
 
    call test_vertical_e_ground_second_order_and_top_neumann()
    call test_ground_rhs_only_modifies_bottom_level()
+   call test_grounded_walls_admit_uniform_phi_ground()
    call test_horizontal_metric_scale_respects_mesh_geometry()
    print *, "PASS: E reconstruction tests"
 
@@ -57,6 +61,7 @@ contains
    subroutine test_ground_rhs_only_modifies_bottom_level()
       integer, parameter :: nCells = 2, nVertLevels = 3
       real(kind=RKIND) :: rhs(nVertLevels,nCells), v_weight_lower(nVertLevels,nCells)
+      real(kind=RKIND) :: wall_weight(nVertLevels,nCells)
 
       rhs = 0.0_RKIND
       v_weight_lower = 0.0_RKIND
@@ -77,7 +82,86 @@ contains
       if (abs(rhs(2,1) - 20.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: lifted ground RHS cell 1"
       if (abs(rhs(1,2) - 15.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: flat ground RHS cell 2"
       if (abs(rhs(1,1)) > 0.0_RKIND) stop "FAIL: buried level received ground RHS"
+
+      ! wall weights: the Dirichlet datum lands on every walled active level
+      rhs = 0.0_RKIND
+      v_weight_lower = 0.0_RKIND
+      v_weight_lower(2,1) = 4.0_RKIND
+      wall_weight = 0.0_RKIND
+      wall_weight(2,1) = 2.0_RKIND
+      wall_weight(3,1) = 0.4_RKIND
+      call electrostatic_apply_ground_rhs(nCells, nVertLevels, 5.0_RKIND, v_weight_lower, rhs, &
+                                          kFirstActive=[2, 1], wall_weight=wall_weight)
+      if (abs(rhs(2,1) - 30.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: ground+wall RHS at kFirst"
+      if (abs(rhs(3,1) - 2.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: wall RHS above kFirst"
+      if (any(abs(rhs(:,2)) > 0.0_RKIND)) stop "FAIL: wall-free cell must be untouched"
+
+      ! fully-buried column sentinel: kFirstActive = nVertLevels+1 must be a
+      ! no-op; without the guard the rhs(4,1) write aliases rhs(1,2)
+      ! column-major and corrupts the neighbor
+      rhs = 0.0_RKIND
+      v_weight_lower = 0.0_RKIND
+      v_weight_lower(1,2) = 3.0_RKIND
+      call electrostatic_apply_ground_rhs(nCells, nVertLevels, 5.0_RKIND, v_weight_lower, rhs, &
+                                          kFirstActive=[4, 1])
+      if (any(abs(rhs(:,1)) > 0.0_RKIND)) stop "FAIL: buried column wrote ground RHS"
+      if (abs(rhs(1,2) - 15.0_RKIND) > 1.0e-14_RKIND) stop "FAIL: buried-column sentinel corrupted neighbor"
    end subroutine test_ground_rhs_only_modifies_bottom_level
+
+   subroutine test_grounded_walls_admit_uniform_phi_ground()
+      integer, parameter :: nCells = 2, nEdges = 1, nVertLevels = 3, maxEdges = 1
+      real(kind=RKIND), parameter :: phi_ground = 5.0_RKIND
+      integer :: cellsOnEdge(2,nEdges), kFirst(nCells)
+      integer :: nEdgesOnCell(nCells), cellsOnCell(maxEdges,nCells), edgesOnCell(maxEdges,nCells)
+      real(kind=RKIND) :: areaCell(nCells), dcEdge(nEdges), dvEdge(nEdges)
+      real(kind=RKIND) :: zGround(nCells), zFace(nVertLevels+1)
+      real(kind=RKIND) :: poissonZmid(nVertLevels,nCells), airThickness(nVertLevels,nCells)
+      real(kind=RKIND) :: h_weight(nVertLevels,nEdges)
+      real(kind=RKIND) :: v_up(nVertLevels,nCells), v_lo(nVertLevels,nCells)
+      real(kind=RKIND) :: diag_extra(nVertLevels,nCells), volume(nVertLevels,nCells)
+      real(kind=RKIND) :: rhs(nVertLevels,nCells), x(nVertLevels,nCells), Ax(nVertLevels,nCells)
+      logical :: active(nVertLevels,nCells)
+      type(mpas_elliptic_operator_type) :: op
+
+      ! the Task 4.1 two-cell terrain case: faces 0,1,2,3; eps = l = d = A = 1;
+      ! cell 1 flat (zg = 0, walled against cell 2's rock), cell 2 zg = 1.2
+      cellsOnEdge(:,1) = [1, 2]
+      nEdgesOnCell = [1, 1]
+      cellsOnCell(:,1) = [2]
+      cellsOnCell(:,2) = [1]
+      edgesOnCell(:,1) = [1]
+      edgesOnCell(:,2) = [1]
+      areaCell = 1.0_RKIND
+      dcEdge = 1.0_RKIND
+      dvEdge = 1.0_RKIND
+      zGround = [0.0_RKIND, 1.2_RKIND]
+      zFace = [0.0_RKIND, 1.0_RKIND, 2.0_RKIND, 3.0_RKIND]
+
+      call electrostatic_build_poisson_grid(nCells, nVertLevels, zGround, zFace, &
+                                            poissonZmid, active, kFirst, airThickness)
+      call electrostatic_build_poisson_fv_weights(nCells, nEdges, nVertLevels, cellsOnEdge, &
+                                                  areaCell, dcEdge, dvEdge, 1.0_RKIND, &
+                                                  zFace, zGround, 3.0_RKIND, poissonZmid, &
+                                                  active, kFirst, airThickness, &
+                                                  h_weight, v_up, v_lo, diag_extra, volume)
+      call elliptic_operator_init_from_weights(op, nCells, nEdges, nVertLevels, maxEdges, &
+                                               nEdgesOnCell, cellsOnCell, edgesOnCell, &
+                                               h_weight, v_up, v_lo, diag_extra, volume, active)
+
+      ! rho = 0: the RHS is pure Dirichlet data (bottom faces + walls)
+      rhs = 0.0_RKIND
+      call electrostatic_apply_ground_rhs(nCells, nVertLevels, phi_ground, v_lo, rhs, &
+                                          kFirstActive=kFirst, wall_weight=diag_extra)
+
+      ! grounded-conductor equilibrium: phi == phi_ground on all active cells
+      ! (0 on identity rows) must satisfy A*x == rhs exactly -- every ground
+      ! and wall face then carries the same Dirichlet datum
+      x = 0.0_RKIND
+      where (active) x = phi_ground
+      call op % matvec(x, Ax)
+      if (maxval(abs(Ax - rhs)) > 1.0e-12_RKIND) stop "FAIL: phi==phi_ground is not an equilibrium"
+      call op % destroy()
+   end subroutine test_grounded_walls_admit_uniform_phi_ground
 
    subroutine test_horizontal_metric_scale_respects_mesh_geometry()
       real(kind=RKIND), parameter :: radius = 6371229.0_RKIND

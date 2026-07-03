@@ -68,6 +68,7 @@ module mpas_electrostatic_driver
       real(kind=RKIND), allocatable :: zFaceP(:)
       real(kind=RKIND), allocatable :: zMidPC(:,:)
       real(kind=RKIND), allocatable :: airThickness(:,:)
+      real(kind=RKIND), allocatable :: wallWeight(:,:)
       real(kind=RKIND), allocatable :: rhoP(:,:)
       integer, allocatable :: kFirstActive(:)
       logical, allocatable :: active(:,:)
@@ -224,6 +225,7 @@ contains
          if (allocated(state_ptr % zFaceP)) deallocate(state_ptr % zFaceP)
          if (allocated(state_ptr % zMidPC)) deallocate(state_ptr % zMidPC)
          if (allocated(state_ptr % airThickness)) deallocate(state_ptr % airThickness)
+         if (allocated(state_ptr % wallWeight)) deallocate(state_ptr % wallWeight)
          if (allocated(state_ptr % rhoP)) deallocate(state_ptr % rhoP)
          if (allocated(state_ptr % kFirstActive)) deallocate(state_ptr % kFirstActive)
          if (allocated(state_ptr % active)) deallocate(state_ptr % active)
@@ -505,6 +507,7 @@ contains
       allocate(state_ptr % zFaceP(nVertLevels+1))
       allocate(state_ptr % zMidPC(nVertLevels,nCells))
       allocate(state_ptr % airThickness(nVertLevels,nCells))
+      allocate(state_ptr % wallWeight(nVertLevels,nCells))
       allocate(state_ptr % kFirstActive(nCells))
       allocate(state_ptr % active(nVertLevels,nCells))
       allocate(state_ptr % E_vertical(nVertLevels,nCells))
@@ -581,6 +584,7 @@ contains
                                                   state_ptr % active, state_ptr % kFirstActive, &
                                                   state_ptr % airThickness, h_weight, v_up, v_lo, &
                                                   diag_extra, op_volume)
+      state_ptr % wallWeight = diag_extra
       call elliptic_operator_init_from_weights(state_ptr % op, nCells, nEdges, nVertLevels, maxEdges, &
                                                nEdgesOnCell, cellsOnCell, edgesOnCell, &
                                                h_weight, v_up, v_lo, diag_extra, op_volume, &
@@ -787,7 +791,8 @@ contains
       if (abs(phi_ground) > 0.0_RKIND) then
          call electrostatic_apply_ground_rhs(nCells, nVertLevels, phi_ground, &
                                              state_ptr % op % v_weight_lower, state_ptr % rhs, &
-                                             kFirstActive=state_ptr % kFirstActive)
+                                             kFirstActive=state_ptr % kFirstActive, &
+                                             wall_weight=state_ptr % wallWeight)
       end if
 
       if (state_ptr % zgrid_mode) then
