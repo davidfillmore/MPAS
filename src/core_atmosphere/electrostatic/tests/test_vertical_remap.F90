@@ -13,6 +13,8 @@ program test_vertical_remap
    call test_linear_profile_exact()
    call test_inactive_poisson_levels_zero()
    call test_poisson_to_mpas_ignores_inactive_source_levels()
+   call test_poisson_to_mpas_clamps_without_ground_blend()
+   call test_poisson_to_mpas_ground_blend_and_buried_columns()
    call test_w_interfaces_interpolate_to_poisson_midpoints()
    call test_build_poisson_grid_flat_matches_current_operator()
    call test_build_poisson_grid_stretched_flat_native_faces()
@@ -74,7 +76,7 @@ contains
       zMpas(:,1) = [2.5_RKIND, 4.0_RKIND, 6.0_RKIND, 7.5_RKIND]
 
       call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, zPoisson, zMpas, &
-                                                zGround, kFirst, active, source, target, &
+                                                zGround, kFirst, source, target, &
                                                 lower_value=0.0_RKIND)
 
       if (abs(target(1,1) - 5.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: ground-to-kFirst interpolation"
@@ -82,6 +84,54 @@ contains
       if (abs(target(3,1) - 25.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: upper active interpolation"
       if (abs(target(4,1) - 30.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: upper clamp"
    end subroutine test_poisson_to_mpas_ignores_inactive_source_levels
+
+   subroutine test_poisson_to_mpas_clamps_without_ground_blend()
+      integer, parameter :: nCells = 1, nVertLevels = 4
+      real(kind=RKIND) :: zPoisson(nVertLevels,nCells), zMpas(nVertLevels,nCells)
+      real(kind=RKIND) :: zGround(nCells), source(nVertLevels,nCells), target(nVertLevels,nCells)
+      integer :: kFirst(nCells)
+
+      ! garbage (99) on the inactive level must never leak into the output
+      zGround = 2.0_RKIND
+      kFirst = 2
+      zPoisson(:,1) = [0.0_RKIND, 3.0_RKIND, 5.0_RKIND, 7.0_RKIND]
+      source(:,1) = [99.0_RKIND, 10.0_RKIND, 20.0_RKIND, 30.0_RKIND]
+      zMpas(:,1) = [2.2_RKIND, 3.0_RKIND, 6.0_RKIND, 8.0_RKIND]
+
+      call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, zPoisson, zMpas, &
+                                                zGround, kFirst, source, target)
+
+      if (abs(target(1,1) - 10.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: no-blend lower clamp"
+      if (abs(target(2,1) - 10.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: exact-first-midpoint value"
+      if (abs(target(3,1) - 25.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: interior bracket"
+      if (abs(target(4,1) - 30.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: upper clamp"
+   end subroutine test_poisson_to_mpas_clamps_without_ground_blend
+
+   subroutine test_poisson_to_mpas_ground_blend_and_buried_columns()
+      integer, parameter :: nCells = 2, nVertLevels = 3
+      real(kind=RKIND) :: zPoisson(nVertLevels,nCells), zMpas(nVertLevels,nCells)
+      real(kind=RKIND) :: zGround(nCells), source(nVertLevels,nCells), target(nVertLevels,nCells)
+      integer :: kFirst(nCells)
+
+      ! cell 1: single active band (kf = nVertLevels); cell 2: fully buried (kf = nVertLevels+1)
+      zGround = [4.0_RKIND, 9.0_RKIND]
+      kFirst = [3, 4]
+      zPoisson(:,1) = [0.0_RKIND, 0.0_RKIND, 5.0_RKIND]
+      zPoisson(:,2) = 0.0_RKIND
+      source(:,1) = [0.0_RKIND, 0.0_RKIND, 30.0_RKIND]
+      source(:,2) = [1.0_RKIND, 2.0_RKIND, 3.0_RKIND]
+      zMpas(:,1) = [3.5_RKIND, 4.5_RKIND, 6.0_RKIND]
+      zMpas(:,2) = [1.0_RKIND, 2.0_RKIND, 3.0_RKIND]
+
+      call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, zPoisson, zMpas, &
+                                                zGround, kFirst, source, target, &
+                                                lower_value=7.0_RKIND)
+
+      if (abs(target(1,1) - 7.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: below-ground weight must clamp to lower_value"
+      if (abs(target(2,1) - 18.5_RKIND) > 1.0e-12_RKIND) stop "FAIL: mid-blend value"
+      if (abs(target(3,1) - 30.0_RKIND) > 1.0e-12_RKIND) stop "FAIL: single-band upper clamp"
+      if (any(abs(target(:,2)) > 0.0_RKIND)) stop "FAIL: buried column must stay zero"
+   end subroutine test_poisson_to_mpas_ground_blend_and_buried_columns
 
    subroutine test_w_interfaces_interpolate_to_poisson_midpoints()
       integer, parameter :: nCells = 1, nVertLevels = 2

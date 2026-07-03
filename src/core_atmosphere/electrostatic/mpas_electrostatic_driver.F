@@ -1202,22 +1202,22 @@ contains
 
          call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
                                                    state_ptr % zMid, state_ptr % zGround, &
-                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   state_ptr % kFirstActive, &
                                                    state_ptr % E_x, work)
          state_ptr % E_x = work
          call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
                                                    state_ptr % zMid, state_ptr % zGround, &
-                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   state_ptr % kFirstActive, &
                                                    state_ptr % E_y, work)
          state_ptr % E_y = work
          call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
                                                    state_ptr % zMid, state_ptr % zGround, &
-                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   state_ptr % kFirstActive, &
                                                    state_ptr % E_z, work)
          state_ptr % E_z = work
          call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
                                                    state_ptr % zMid, state_ptr % zGround, &
-                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   state_ptr % kFirstActive, &
                                                    state_ptr % E_vertical, work)
          state_ptr % E_vertical = work
       else
@@ -1242,7 +1242,7 @@ contains
          phiP = phi
          call electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, state_ptr % zMidPC, &
                                                    state_ptr % zMid, state_ptr % zGround, &
-                                                   state_ptr % kFirstActive, state_ptr % active, &
+                                                   state_ptr % kFirstActive, &
                                                    phiP, work, lower_value=phi_ground)
          nPhiCells = min(size(phi, 2), size(work, 2))
          phi = 0.0_RKIND

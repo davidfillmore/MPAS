@@ -273,7 +273,7 @@ contains
 !-----------------------------------------------------------------------
    subroutine electrostatic_interp_poisson_to_mpas(nCells, nVertLevels, &
                                                    zPoissonMid, zMpasMid, zGround, &
-                                                   kFirstActive, active, source, target, &
+                                                   kFirstActive, source, target, &
                                                    lower_value)
 
       integer, intent(in) :: nCells
@@ -282,12 +282,11 @@ contains
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: zMpasMid
       real(kind=RKIND), dimension(nCells), intent(in) :: zGround
       integer, dimension(nCells), intent(in) :: kFirstActive
-      logical, dimension(nVertLevels,nCells), intent(in) :: active
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(in) :: source
       real(kind=RKIND), dimension(nVertLevels,nCells), intent(out) :: target
       real(kind=RKIND), intent(in), optional :: lower_value
 
-      integer :: iCell, k, kf, m
+      integer :: iCell, k, kf
       real(kind=RKIND) :: weight, zt
 
       target = 0.0_RKIND
@@ -299,32 +298,23 @@ contains
          do k = 1, nVertLevels
             zt = zMpasMid(k,iCell)
 
-            if (zt <= zPoissonMid(kf,iCell)) then
-               if (present(lower_value) .and. zPoissonMid(kf,iCell) > zGround(iCell)) then
-                  weight = max(0.0_RKIND, min(1.0_RKIND, &
-                           (zt - zGround(iCell)) / (zPoissonMid(kf,iCell) - zGround(iCell))))
-                  target(k,iCell) = (1.0_RKIND - weight) * lower_value + &
-                                    weight * source(kf,iCell)
-               else
-                  target(k,iCell) = source(kf,iCell)
-               end if
-            else if (zt >= zPoissonMid(nVertLevels,iCell)) then
-               target(k,iCell) = source(nVertLevels,iCell)
+            if (present(lower_value) .and. zt <= zPoissonMid(kf,iCell) .and. &
+                zPoissonMid(kf,iCell) > zGround(iCell)) then
+               ! Ground anchor: blend lower_value at zGround into source(kf)
+               ! at the first active midpoint; weight clamps for targets
+               ! below the local ground.
+               weight = max(0.0_RKIND, min(1.0_RKIND, &
+                        (zt - zGround(iCell)) / (zPoissonMid(kf,iCell) - zGround(iCell))))
+               target(k,iCell) = (1.0_RKIND - weight) * lower_value + &
+                                 weight * source(kf,iCell)
             else
-               do m = kf, nVertLevels - 1
-                  if (.not. active(m,iCell) .or. .not. active(m+1,iCell)) cycle
-                  if (zt >= zPoissonMid(m,iCell) .and. zt <= zPoissonMid(m+1,iCell)) then
-                     if (zPoissonMid(m+1,iCell) <= zPoissonMid(m,iCell)) then
-                        target(k,iCell) = source(m,iCell)
-                     else
-                        weight = (zt - zPoissonMid(m,iCell)) / &
-                                 (zPoissonMid(m+1,iCell) - zPoissonMid(m,iCell))
-                        target(k,iCell) = (1.0_RKIND - weight) * source(m,iCell) + &
-                                          weight * source(m+1,iCell)
-                     end if
-                     exit
-                  end if
-               end do
+               ! Levels kf..nVertLevels are exactly the active band with
+               ! strictly increasing midpoints (grid-builder invariant), so
+               ! plain column interpolation over the active slice reproduces
+               ! the previous bracket scan, endpoint clamps included.
+               target(k,iCell) = interp_column_linear(nVertLevels - kf + 1, &
+                                                      zPoissonMid(kf:nVertLevels,iCell), &
+                                                      source(kf:nVertLevels,iCell), zt)
             end if
          end do
       end do
