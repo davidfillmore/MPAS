@@ -360,8 +360,13 @@ def seed_terrain_run_dir(template_run_dir, run_dir):
     shutil.copy2(source, target)
 
 
-def add_terrain_namelist_keys(run_dir, hill_height):
-    """Enable terrain zgrid electrostatics in namelist.atmosphere."""
+def add_terrain_namelist_keys(run_dir):
+    """Enable terrain zgrid electrostatics in namelist.atmosphere.
+
+    Finding #17: config_electrostatic_hill_height is deliberately not
+    written — the driver reads it only for source='mms_terrain', while the
+    supercell runs source='stub' with the hill baked into supercell_init.nc.
+    """
     namelist = run_dir / "namelist.atmosphere"
     text = namelist.read_text()
     text = tier_a1.set_namelist_value(
@@ -369,12 +374,6 @@ def add_terrain_namelist_keys(run_dir, hill_height):
         "electrostatic",
         "config_electrostatic_terrain_mode",
         "'zgrid'",
-    )
-    text = tier_a1.set_namelist_value(
-        text,
-        "electrostatic",
-        "config_electrostatic_hill_height",
-        f"{hill_height:.3f}",
     )
     namelist.write_text(text)
 
@@ -424,7 +423,7 @@ def prepare_run_dir(
         poisson_max_iter=poisson_max_iter,
         solve_at_init=solve_at_init,
     )
-    add_terrain_namelist_keys(run_dir, hill_height)
+    add_terrain_namelist_keys(run_dir)
     charge_supercell.configure_streams(streams, output_interval)
     charge_supercell.ensure_coupled_output_stream_list(
         run_dir / "stream_list.atmosphere.output"
